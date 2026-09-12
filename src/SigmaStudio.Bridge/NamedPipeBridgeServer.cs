@@ -28,10 +28,10 @@ public sealed class NamedPipeBridgeServer
     {
         while (!cancellationToken.IsCancellationRequested)
         {
-            await using var server = CreateServer();
+            using var server = CreateServer();
             try
             {
-                await server.WaitForConnectionAsync(cancellationToken);
+                await server.WaitForConnectionAsync();
                 await ServeClientAsync(server, cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -82,6 +82,7 @@ public sealed class NamedPipeBridgeServer
                     "bridge.ping" => Success(request.Id, new { pong = true }),
                     "bridge.get_version" => Success(request.Id, new { version = "0.1.0", targetFramework = ".NET 8 Windows" }),
                     "bridge.get_capabilities" => Success(request.Id, new BridgeCapabilities("0.1.0", _adapter.BackendName, _adapter.IsLoaded, _observer.IsAvailable, _adapter.Methods)),
+                    "bridge.probe" => Success(request.Id, _adapter.Probe()),
                     "bridge.get_snapshot" => Success(request.Id, _adapter.GetSnapshot()),
                     "bridge.ui_status" => Success(request.Id, _observer.ReadStatus()),
                     "bridge.capture_get" => Success(request.Id, _observer.ReadCapture()),
@@ -106,7 +107,11 @@ public sealed class NamedPipeBridgeServer
         var security = new PipeSecurity();
         var identity = WindowsIdentity.GetCurrent().User ?? throw new InvalidOperationException("Current Windows user SID is unavailable.");
         security.AddAccessRule(new PipeAccessRule(identity, PipeAccessRights.ReadWrite, AccessControlType.Allow));
+#if NET48
+        return new NamedPipeServerStream(_options.PipeName, PipeDirection.InOut, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous, 0, 0, security);
+#else
         return NamedPipeServerStreamAcl.Create(_options.PipeName, PipeDirection.InOut, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous, 0, 0, security);
+#endif
     }
 
     private static BridgeResponse Success(string id, object? result) => new(id, true, JsonSerializer.SerializeToElement(result, JsonOptions));
@@ -132,8 +137,8 @@ internal static class PipeFrame
     {
         if (payload.Length > MaxMessageBytes) throw new InvalidDataException("Bridge message exceeds 16 MiB.");
         var prefix = BitConverter.GetBytes(payload.Length);
-        await stream.WriteAsync(prefix, cancellationToken);
-        await stream.WriteAsync(payload, cancellationToken);
+        await stream.WriteAsync(prefix, 0, prefix.Length, cancellationToken);
+        await stream.WriteAsync(payload, 0, payload.Length, cancellationToken);
         await stream.FlushAsync(cancellationToken);
     }
 
@@ -142,7 +147,7 @@ internal static class PipeFrame
         var offset = 0;
         while (offset < buffer.Length)
         {
-            var count = await stream.ReadAsync(buffer.AsMemory(offset), cancellationToken);
+            var count = await stream.ReadAsync(buffer, offset, buffer.Length - offset, cancellationToken);
             if (count == 0) return false;
             offset += count;
         }

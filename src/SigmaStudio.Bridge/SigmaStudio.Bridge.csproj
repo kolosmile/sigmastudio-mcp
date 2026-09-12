@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <TargetFrameworks>net8.0-windows;net48</TargetFrameworks>
     <RootNamespace>SigmaStudio.Bridge</RootNamespace>
     <OutputType>Exe</OutputType>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
@@ -8,6 +8,8 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="System.IO.Pipes.AccessControl" />
+    <PackageReference Include="System.ServiceModel.NetNamedPipe" Condition="'$(TargetFramework)' == 'net8.0-windows'" />
+    <PackageReference Include="System.Text.Json" Condition="'$(TargetFramework)' == 'net48'" />
     <ProjectReference Include="..\SigmaStudio.Contracts\SigmaStudio.Contracts.csproj" />
   </ItemGroup>
 </Project>

@@ -81,6 +81,13 @@ public sealed record ProjectStateDto(
     SigmaStudioState SigmaStudioState,
     bool ReadyForMeasurement);
 
+public sealed record AutomationSnapshot(
+    ProjectStateDto State,
+    ProjectGraphDto Graph,
+    IReadOnlyList<CaptureEntryDto> Capture,
+    string Backend,
+    bool Connected);
+
 public sealed record CaptureEntryDto(
     long Sequence,
     DateTimeOffset Timestamp,

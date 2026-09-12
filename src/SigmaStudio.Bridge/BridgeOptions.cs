@@ -16,7 +16,8 @@ public sealed record BridgeOptions(string PipeName, string? SigmaStudioServerPat
     public static string PipeNameForCurrentUser()
     {
         var sid = WindowsIdentity.GetCurrent().User?.Value ?? Environment.UserName;
-        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(sid))).ToLowerInvariant()[..16];
+        using var sha = SHA256.Create();
+        var hash = BitConverter.ToString(sha.ComputeHash(Encoding.UTF8.GetBytes(sid))).Replace("-", "").ToLowerInvariant().Substring(0, 16);
         return $"SigmaStudioMcp.{hash}";
     }
 
@@ -24,6 +25,6 @@ public sealed record BridgeOptions(string PipeName, string? SigmaStudioServerPat
     {
         var prefix = name + "=";
         var value = args.FirstOrDefault(a => a.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
-        return value?[prefix.Length..].Trim('"');
+        return value?.Substring(prefix.Length).Trim('"');
     }
 }

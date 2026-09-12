@@ -12,13 +12,6 @@ public sealed record AutomationResult(bool Ok, object? Data = null, string? Erro
     public static AutomationResult Failure(string code, string message, IReadOnlyDictionary<string, object?>? details = null) => new(false, null, code, message, details);
 }
 
-public sealed record AutomationSnapshot(
-    ProjectStateDto State,
-    ProjectGraphDto Graph,
-    IReadOnlyList<CaptureEntryDto> Capture,
-    string Backend,
-    bool Connected);
-
 public interface ISigmaStudioAutomation
 {
     string BackendName { get; }
