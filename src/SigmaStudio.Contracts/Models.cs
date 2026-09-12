@@ -263,7 +263,7 @@ public sealed record ConnectionInput(
 
 public sealed record ConnectionRemoveInput(ConnectionDto Connection, MutationInput Mutation);
 
-public sealed record CaptureGetInput(long? AfterSequence = null, int Limit = 100);
+public sealed record CaptureGetInput(long? AfterSequence = null, int Limit = 100, bool IncludeRaw = false);
 
 public sealed record PropertyProbeGetControlValueInput(
     string ObjectName,

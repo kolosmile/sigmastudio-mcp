@@ -111,12 +111,12 @@ public sealed class SigmaTools
     [McpServerTool(Name = "sigma_deploy", UseStructuredContent = true), Description("Run link, compile and download as one serialized deployment operation.")]
     public Task<SigmaToolResult<object?>> Deploy(CancellationToken cancellationToken) => _runtime.DeployAsync(cancellationToken);
 
-    [McpServerTool(Name = "sigma_capture_get", ReadOnly = true, Idempotent = true, UseStructuredContent = true), Description("Read recent Capture Window entries after an optional sequence cursor.")]
+    [McpServerTool(Name = "sigma_capture_get", ReadOnly = true, Idempotent = true, UseStructuredContent = true), Description("Read compact structured Capture Window entries after an optional sequence cursor. Raw clipboard fields are omitted unless includeRaw=true.")]
     public Task<SigmaToolResult<object?>> CaptureGet(CaptureGetInput input, CancellationToken cancellationToken) => _runtime.CaptureGetAsync(input, cancellationToken);
 
     [McpServerTool(Name = "sigma_capture_cursor", ReadOnly = true, Idempotent = true, UseStructuredContent = true), Description("Return the next Capture Window sequence cursor.")]
     public Task<SigmaToolResult<object?>> CaptureCursor(CancellationToken cancellationToken) => _runtime.CaptureCursorAsync(cancellationToken);
 
-    [McpServerTool(Name = "sigma_capture_wait", ReadOnly = true, UseStructuredContent = true), Description("Wait for a new Capture Window entry up to the configured timeout.")]
-    public Task<SigmaToolResult<object?>> CaptureWait(long afterSequence, int timeoutMs = 30000, CancellationToken cancellationToken = default) => _runtime.CaptureWaitAsync(afterSequence, timeoutMs, cancellationToken);
+    [McpServerTool(Name = "sigma_capture_wait", ReadOnly = true, UseStructuredContent = true), Description("Wait for a new compact structured Capture Window entry. Raw clipboard fields are omitted unless includeRaw=true.")]
+    public Task<SigmaToolResult<object?>> CaptureWait(long afterSequence, int timeoutMs = 30000, bool includeRaw = false, CancellationToken cancellationToken = default) => _runtime.CaptureWaitAsync(afterSequence, timeoutMs, includeRaw, cancellationToken);
 }

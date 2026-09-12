@@ -269,10 +269,11 @@ public sealed class SigmaRuntime
     {
         return await ReadAsync("sigma_capture_get", ct, snapshot => new
         {
-            entries = snapshot.Capture
+            entries = CaptureResponseSerializer.Project(snapshot.Capture
                 .Where(e => input.AfterSequence is null || e.Sequence > input.AfterSequence.Value)
-                .Take(Math.Clamp(input.Limit, 1, 1000)).ToArray(),
-            warning = snapshot.CaptureWarning
+                .Take(Math.Clamp(input.Limit, 1, 1000)).ToArray(), input.IncludeRaw),
+            warning = snapshot.CaptureWarning,
+            serialization = CaptureResponseSerializer.Metadata(input.IncludeRaw)
         });
     }
 
@@ -281,14 +282,19 @@ public sealed class SigmaRuntime
         return await ReadAsync("sigma_capture_cursor", ct, snapshot => new CaptureCursorDto((snapshot.Capture.LastOrDefault()?.Sequence ?? 0) + 1));
     }
 
-    public async Task<SigmaToolResult<object?>> CaptureWaitAsync(long afterSequence, int timeoutMs, CancellationToken ct)
+    public async Task<SigmaToolResult<object?>> CaptureWaitAsync(long afterSequence, int timeoutMs, bool includeRaw, CancellationToken ct)
     {
         var deadline = DateTimeOffset.UtcNow.AddMilliseconds(Math.Clamp(timeoutMs, 1, _options.CaptureWaitMaxSeconds * 1000));
         while (DateTimeOffset.UtcNow < deadline)
         {
             var snapshot = await _automation.GetSnapshotAsync(ct);
             var entries = snapshot.Capture.Where(e => e.Sequence > afterSequence).ToArray();
-            if (entries.Length > 0) return Success("sigma_capture_wait", snapshot, entries);
+            if (entries.Length > 0)
+                return Success("sigma_capture_wait", snapshot, new
+                {
+                    entries = CaptureResponseSerializer.Project(entries, includeRaw),
+                    serialization = CaptureResponseSerializer.Metadata(includeRaw)
+                });
             await Task.Delay(100, ct);
         }
         return Failure("sigma_capture_wait", "TIMEOUT", "No new Capture Window entry arrived before the timeout.");

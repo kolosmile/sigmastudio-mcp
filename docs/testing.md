@@ -38,6 +38,8 @@ The non-HIL suite also covers deterministic export IDs, graph fingerprints, revi
 
 The opt-in Capture test verifies the local 4.7 owner-drawn grid route. It selects the visible range, right-clicks in the text area, waits for the context menu, invokes `Down` + `Enter`, parses the clipboard into structured entries, and requires a non-empty selected-range result.
 
+MCP Capture responses use compact structured JSON by default. Large `rawText` and `rawColumns` fields are omitted and represented by length/SHA-256 metadata; pass `includeRaw=true` to `sigma_capture_get` or `sigma_capture_wait` only when the raw fields are explicitly needed.
+
 ```powershell
 $env:SIGMASTUDIO_MCP_HIL_CAPTURE = "1"
 dotnet test tests/SigmaStudio.IntegrationTests/SigmaStudio.IntegrationTests.csproj -c Release --filter "FullyQualifiedName~CaptureHilTests.Selected_capture_row_copy_is_structured_and_non_empty"

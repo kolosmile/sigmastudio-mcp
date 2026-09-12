@@ -6,4 +6,6 @@ A Phase 0 hard gate feladata: SigmaStudio processz, főablak, status bar, Captur
 
 Capture-sorok elsődlegesen az accessibility tree `DataItem`, `ListItem`, `TreeItem` vagy `Custom` row-elemeiből olvashatók. Ha nincs row, a Bridge a bizonyított selected-range útvonalat használja: `Home` + `Shift+End`, jobb klikk a táblázat szöveges részén, a kontextusmenü megjelenésének megvárása, majd `Down` + `Enter` a `Copy to clipboard` aktiválásához. A helyi 4.7 profilon ez 131,122 karakteres, 12 `Block Write` sort tartalmazó clipboard-szöveget adott; a parser ebből strukturált Capture rekordokat készít. A Bridge nem használ OCR-t és nem olvas képernyőképet.
 
+Az MCP válasz alapértelmezésben kompakt strukturált JSON. A nagy `rawText` és `rawColumns` mezők helyett hossz- és SHA-256 metaadat jelenik meg; a teljes nyers mezők csak explicit `includeRaw=true` kérésnél kerülnek vissza.
+
 Az observer a Capture snapshotot longest-common-prefix alapján delta-olja. Azonos egymást követő sorok külön események maradnak; rövidebb lista clear/reset eseményként új snapshot-generációt indít.
