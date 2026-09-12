@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>SigmaStudio.Core</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\SigmaStudio.Contracts\SigmaStudio.Contracts.csproj" />
+    <ProjectReference Include="..\SigmaStudio.Graph\SigmaStudio.Graph.csproj" />
+  </ItemGroup>
+</Project>

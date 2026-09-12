@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net8.0</TargetFramework></PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="coverlet.collector" />
+    <ProjectReference Include="..\..\src\SigmaStudio.Core\SigmaStudio.Core.csproj" />
+    <ProjectReference Include="..\..\src\SigmaStudio.Catalog\SigmaStudio.Catalog.csproj" />
+    <ProjectReference Include="..\..\src\SigmaStudio.Graph\SigmaStudio.Graph.csproj" />
+  </ItemGroup>
+</Project>

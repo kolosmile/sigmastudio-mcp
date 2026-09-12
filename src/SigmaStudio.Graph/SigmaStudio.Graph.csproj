@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>SigmaStudio.Graph</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\SigmaStudio.Contracts\SigmaStudio.Contracts.csproj" />
+  </ItemGroup>
+</Project>

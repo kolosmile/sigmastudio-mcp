@@ -1,0 +1,31 @@
+bin/
+obj/
+.vs/
+.idea/
+TestResults/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.nupkg
+*.snupkg
+*.dll
+*.pdb
+*.deps.json
+*.runtimeconfig.json
+*.dspproj.user
+*.tmp
+*.log
+artifacts/
+publish/
+data/catalog/generated/
+ui-profiles/local/
+
+# Proprietary Analog Devices binaries must never enter the repository.
+Analog.SigmaStudioServer.dll
+**/Analog.SigmaStudioServer.dll
+
+# Local SigmaStudio exports and disposable projects.
+.sigmastudio-mcp/
+*.hex
+*.bin

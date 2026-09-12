@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>SigmaStudio.CatalogBuilder</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\SigmaStudio.Contracts\SigmaStudio.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\SigmaStudio.Catalog\SigmaStudio.Catalog.csproj" />
+  </ItemGroup>
+</Project>

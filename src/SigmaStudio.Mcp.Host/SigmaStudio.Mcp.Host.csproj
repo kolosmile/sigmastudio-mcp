@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>SigmaStudio.Mcp.Host</RootNamespace>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="ModelContextProtocol.AspNetCore" />
+    <ProjectReference Include="..\SigmaStudio.Contracts\SigmaStudio.Contracts.csproj" />
+    <ProjectReference Include="..\SigmaStudio.Core\SigmaStudio.Core.csproj" />
+    <ProjectReference Include="..\SigmaStudio.Catalog\SigmaStudio.Catalog.csproj" />
+    <ProjectReference Include="..\SigmaStudio.Graph\SigmaStudio.Graph.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="..\..\data\catalog\adau1701\catalog.json" Link="data\catalog\adau1701\catalog.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

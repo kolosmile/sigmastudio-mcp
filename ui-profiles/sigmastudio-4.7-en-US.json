@@ -1,0 +1,7 @@
+{
+  "profile": "sigmastudio-4.7-en-US",
+  "verified": false,
+  "statusBar": null,
+  "captureWindow": null,
+  "notes": "Populate from SigmaStudio.UiProbe output after Phase 0 hard gate passes."
+}

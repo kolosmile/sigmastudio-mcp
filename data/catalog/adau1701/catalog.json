@@ -1,0 +1,102 @@
+[
+  {
+    "id": "io.audio_input",
+    "name": "Audio Input",
+    "toolboxPath": "Hardware/Input",
+    "category": "I/O",
+    "coresSupported": [],
+    "adau1701Compatibility": "Supported",
+    "inputs": [],
+    "outputs": [{ "index": 0, "name": "Output", "direction": "output" }],
+    "controls": [],
+    "dspParameters": [],
+    "growSupported": false,
+    "addAlgorithmSupported": false,
+    "resourceUsage": {},
+    "warnings": [],
+    "automation": {},
+    "source": {
+      "publisher": "Analog Devices",
+      "retrievedAt": "2026-09-12T00:00:00Z",
+      "contentHash": "local-built-in-fixture",
+      "reference": "https://wiki.analog.com/resources/tools-software/sigmastudio/toolbox"
+    },
+    "description": "ADAU1701 audio input endpoint."
+  },
+  {
+    "id": "volume.linear_gain",
+    "name": "Linear Gain",
+    "toolboxPath": "Volume/Linear Gain",
+    "category": "Volume",
+    "coresSupported": ["ADAU1701"],
+    "adau1701Compatibility": "Supported",
+    "inputs": [{ "index": 0, "name": "Input", "direction": "input" }],
+    "outputs": [{ "index": 0, "name": "Output", "direction": "output" }],
+    "controls": [{ "name": "Gain", "value": 0, "min": -24, "max": 24, "unit": "dB" }],
+    "dspParameters": [],
+    "growSupported": false,
+    "addAlgorithmSupported": false,
+    "resourceUsage": { "instructions": 8 },
+    "warnings": [],
+    "automation": { "insert": "runtime-discovery-required" },
+    "source": {
+      "publisher": "Analog Devices",
+      "retrievedAt": "2026-09-12T00:00:00Z",
+      "contentHash": "local-built-in-fixture",
+      "reference": "https://wiki.analog.com/resources/tools-software/sigmastudio/toolbox"
+    },
+    "description": "A documented linear gain control with a -24 dB to +24 dB range."
+  },
+  {
+    "id": "filter.parametric_eq",
+    "name": "Parametric EQ",
+    "toolboxPath": "Filters/Parametric EQ",
+    "category": "Filters",
+    "coresSupported": ["ADAU1701"],
+    "adau1701Compatibility": "Supported",
+    "inputs": [{ "index": 0, "name": "Input", "direction": "input" }],
+    "outputs": [{ "index": 0, "name": "Output", "direction": "output" }],
+    "controls": [
+      { "name": "Frequency", "value": 1000, "min": 20, "max": 20000, "unit": "Hz" },
+      { "name": "Gain", "value": 0, "min": -24, "max": 24, "unit": "dB" },
+      { "name": "Q", "value": 1, "min": 0.1, "max": 20, "unit": "Q" }
+    ],
+    "dspParameters": [],
+    "growSupported": false,
+    "addAlgorithmSupported": false,
+    "resourceUsage": { "instructions": 42 },
+    "warnings": [],
+    "automation": { "insert": "runtime-discovery-required" },
+    "source": {
+      "publisher": "Analog Devices",
+      "retrievedAt": "2026-09-12T00:00:00Z",
+      "contentHash": "local-built-in-fixture",
+      "reference": "https://wiki.analog.com/resources/tools-software/sigmastudio/toolbox"
+    },
+    "description": "Parametric equalizer metadata; exact installed toolbox automation name must be verified."
+  },
+  {
+    "id": "io.audio_output",
+    "name": "Audio Output",
+    "toolboxPath": "Hardware/Output",
+    "category": "I/O",
+    "coresSupported": [],
+    "adau1701Compatibility": "Supported",
+    "inputs": [{ "index": 0, "name": "Input", "direction": "input" }],
+    "outputs": [],
+    "controls": [],
+    "dspParameters": [],
+    "growSupported": false,
+    "addAlgorithmSupported": false,
+    "resourceUsage": {},
+    "warnings": [],
+    "automation": {},
+    "source": {
+      "publisher": "Analog Devices",
+      "retrievedAt": "2026-09-12T00:00:00Z",
+      "contentHash": "local-built-in-fixture",
+      "reference": "https://wiki.analog.com/resources/tools-software/sigmastudio/toolbox"
+    },
+    "description": "ADAU1701 audio output endpoint."
+  }
+]
