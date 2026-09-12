@@ -32,6 +32,7 @@ public sealed class SigmaStudioServerAdapter
         "graph.refreshLive",
         "catalog.discovery",
         "property.probeGetControlValue",
+        "property.probeSetControlValue",
         "block.add", "block.remove", "block.rename", "block.getControls", "block.setControl", "block.setControls", "connection.add", "connection.remove"
     ];
 
@@ -129,6 +130,8 @@ public sealed class SigmaStudioServerAdapter
                     return RefreshBlockControls(RequiredString(payload, "block"));
                 case "property.probeGetControlValue":
                     return ProbeGetControlValue(payload);
+                case "property.probeSetControlValue":
+                    return ProbeSetControlValue(payload);
                 case "catalog.discovery":
                     return CatalogDiscovery();
                 case "block.remove":
@@ -366,6 +369,74 @@ public sealed class SigmaStudioServerAdapter
         });
     }
 
+    private AdapterResult ProbeSetControlValue(JsonElement payload)
+    {
+        if (!string.Equals(Environment.GetEnvironmentVariable("SIGMASTUDIO_MCP_HIL_MUTATION"), "1", StringComparison.Ordinal))
+            return AdapterResult.Failure("MUTATION_HIL_DISABLED", "The SET property probe requires SIGMASTUDIO_MCP_HIL_MUTATION=1.");
+
+        var configuredProject = Environment.GetEnvironmentVariable("SIGMASTUDIO_MCP_HIL_PROJECT");
+        if (string.IsNullOrWhiteSpace(configuredProject))
+            return AdapterResult.Failure("MUTATION_HIL_PROJECT_REQUIRED", "The SET property probe requires SIGMASTUDIO_MCP_HIL_PROJECT to identify a disposable project.");
+        if (!IsAllowedMutationProject(configuredProject))
+            return AdapterResult.Failure("MUTATION_HIL_PROJECT_INVALID", "The mutation project must end in '.hil.dspproj' or be under a dedicated tests/hil-projects directory.");
+        if (string.IsNullOrWhiteSpace(_projectPath) || !PathsEqual(_projectPath!, configuredProject))
+            return AdapterResult.Failure("MUTATION_HIL_PROJECT_NOT_OPEN", "The configured disposable HIL project is not the currently open SigmaStudio project.");
+
+        var objectName = RequiredString(payload, "objectName");
+        var algorithmIndex = payload.TryGetProperty("algorithmIndex", out var algorithm) && algorithm.TryGetInt32(out var algorithmValue) ? algorithmValue : 0;
+        var repeatIndex = payload.TryGetProperty("repeatIndex", out var repeat) && repeat.TryGetInt32(out var repeatValue) ? repeatValue : 0;
+        var controlName = RequiredString(payload, "controlName");
+        if (!payload.TryGetProperty("value", out var jsonValue)) throw new ArgumentException("Parameter 'value' is required.");
+
+        var value = JsonValueToClr(jsonValue);
+        var method = _server!.GetType().GetMethods(BindingFlags.Instance | BindingFlags.Public)
+            .FirstOrDefault(candidate => string.Equals(candidate.Name, "SET_OBJECT_PROPERTY", StringComparison.OrdinalIgnoreCase) && candidate.GetParameters().Length == 3);
+        if (method is null) return AdapterResult.Failure("SET_OBJECT_PROPERTY_UNAVAILABLE", "SET_OBJECT_PROPERTY with the documented three-parameter signature was not found.");
+
+        var propertyArguments = PropertyInvocationBuilder.BuildSetControlValueArguments(objectName, algorithmIndex, repeatIndex, controlName, value);
+        try
+        {
+            var returned = method.Invoke(_server, propertyArguments);
+            _runtimeRevision++;
+            return AdapterResult.Success(new
+            {
+                serverMethod = FormatSignature(method),
+                objectName,
+                opcode = "setControlValue",
+                propertyParameters = new object?[] { algorithmIndex, repeatIndex, controlName, value },
+                inputClrType = value?.GetType().FullName,
+                returnBool = returned as bool? ?? true,
+                exception = (string?)null
+            });
+        }
+        catch (TargetInvocationException ex) when (ex.InnerException is not null)
+        {
+            return AdapterResult.Success(new
+            {
+                serverMethod = FormatSignature(method),
+                objectName,
+                opcode = "setControlValue",
+                propertyParameters = new object?[] { algorithmIndex, repeatIndex, controlName, value },
+                inputClrType = value?.GetType().FullName,
+                returnBool = (bool?)null,
+                exception = ex.InnerException.ToString()
+            });
+        }
+        catch (Exception ex)
+        {
+            return AdapterResult.Success(new
+            {
+                serverMethod = FormatSignature(method),
+                objectName,
+                opcode = "setControlValue",
+                propertyParameters = new object?[] { algorithmIndex, repeatIndex, controlName, value },
+                inputClrType = value?.GetType().FullName,
+                returnBool = (bool?)null,
+                exception = ex.ToString()
+            });
+        }
+    }
+
     private PropertyProbeResult InvokeGetControlValue(string objectName, int algorithmIndex, int repeatIndex, string controlName)
     {
         var method = _server!.GetType().GetMethods(BindingFlags.Instance | BindingFlags.Public)
@@ -391,6 +462,30 @@ public sealed class SigmaStudioServerAdapter
 
     private static string FormatSignature(MethodInfo method) =>
         $"{method.Name}({string.Join(", ", method.GetParameters().Select(parameter => $"{parameter.ParameterType.FullName} {parameter.Name}"))}) -> {method.ReturnType.FullName}";
+
+    private static bool PathsEqual(string left, string right) =>
+        string.Equals(Path.GetFullPath(left), Path.GetFullPath(right), StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsAllowedMutationProject(string path)
+    {
+        var full = Path.GetFullPath(path);
+        var normalized = full.Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar);
+        return full.EndsWith(".hil.dspproj", StringComparison.OrdinalIgnoreCase) ||
+               normalized.IndexOf($"{Path.DirectorySeparatorChar}tests{Path.DirectorySeparatorChar}hil-projects{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase) >= 0;
+    }
+
+    private static object? JsonValueToClr(JsonElement value) => value.ValueKind switch
+    {
+        JsonValueKind.Null or JsonValueKind.Undefined => null,
+        JsonValueKind.True => true,
+        JsonValueKind.False => false,
+        JsonValueKind.Number when value.TryGetInt64(out var integer) => integer,
+        JsonValueKind.Number when value.TryGetDouble(out var number) => number,
+        JsonValueKind.String => value.GetString(),
+        JsonValueKind.Array => value.EnumerateArray().Select(JsonValueToClr).ToArray(),
+        JsonValueKind.Object => value.EnumerateObject().ToDictionary(property => property.Name, property => JsonValueToClr(property.Value), StringComparer.Ordinal),
+        _ => value.GetRawText()
+    };
 
     private static string RequiredString(JsonElement payload, string name)
     {

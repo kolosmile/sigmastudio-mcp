@@ -69,6 +69,9 @@ public sealed class SigmaTools
     [McpServerTool(Name = "sigma_property_probe_get_control_value", ReadOnly = true, Idempotent = true, UseStructuredContent = true), Description("Read-only developer probe for the verified SigmaStudio getControlValue property contract. Provide the exact exported object name, algorithm index, repeat index and control parameter name.")]
     public Task<SigmaToolResult<object?>> PropertyProbeGetControlValue(PropertyProbeGetControlValueInput input, CancellationToken cancellationToken) => _runtime.PropertyProbeGetControlValueAsync(input, cancellationToken);
 
+    [McpServerTool(Name = "sigma_property_probe_set_control_value", UseStructuredContent = true), Description("Disposable-HIL-only developer probe for setControlValue. Requires SIGMASTUDIO_MCP_HIL_MUTATION=1, SIGMASTUDIO_MCP_HIL_PROJECT, and the exact disposable project to be open; it does not enable production block.setControl or claim read-after-write verification.")]
+    public Task<SigmaToolResult<object?>> PropertyProbeSetControlValue(PropertyProbeSetControlValueInput input, CancellationToken cancellationToken) => _runtime.PropertyProbeSetControlValueAsync(input, cancellationToken);
+
     [McpServerTool(Name = "sigma_block_get", ReadOnly = true, Idempotent = true, UseStructuredContent = true), Description("Read one block by stable blockId (or legacy objectName), including current control metadata; refreshControls forces a fresh live export.")]
     public Task<SigmaToolResult<object?>> BlockGet(string block, bool refreshControls = false, CancellationToken cancellationToken = default) => _runtime.BlockGetAsync(block, refreshControls, cancellationToken);
 

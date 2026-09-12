@@ -271,6 +271,13 @@ public sealed record PropertyProbeGetControlValueInput(
     int AlgorithmIndex = 0,
     int RepeatIndex = 0);
 
+public sealed record PropertyProbeSetControlValueInput(
+    string ObjectName,
+    string ControlName,
+    JsonElement Value,
+    int AlgorithmIndex = 0,
+    int RepeatIndex = 0);
+
 public sealed record RawAccessOptions(bool EnableRawParameterAccess = false, bool EnableRawRegisterAccess = false);
 
 public sealed record BridgeRequest(

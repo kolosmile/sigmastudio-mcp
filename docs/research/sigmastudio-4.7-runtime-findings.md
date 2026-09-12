@@ -22,6 +22,7 @@ Observed evidence:
 - The verified context-menu probe and focused keyboard `Ctrl+A`/`Ctrl+C` probe produced no Capture clipboard text on this local build. Production therefore returns `CAPTURE_COPY_ACTION_UNAVAILABLE` instead of claiming that a visible owner-drawn grid was read.
 - The local reflection signature is `GET_OBJECT_PROPERTY(string opcode, string objectName, object[]& getPropVal, object[] propertyParams) -> bool`. A read-only probe for `Mute1`, algorithm `0`, repeat `0`, control `Mute` passed `propertyParams=[0,0,"Mute"]`, returned `true`, and produced one `System.Boolean` value (`false`). The previous `["Mute"]` parameter shape was incorrect.
 - The read-only MCP developer tool is `sigma_property_probe_get_control_value`; it returns the reflected signature, object name, opcode, property parameters, return value, CLR types and values.
+- A disposable-project-only `sigma_property_probe_set_control_value` developer probe is now available for the next gate. It requires `SIGMASTUDIO_MCP_HIL_MUTATION=1`, an exact `SIGMASTUDIO_MCP_HIL_PROJECT` match, and a `.hil.dspproj` or `tests/hil-projects` path. It returns the reflected SET signature, CLR input type, property parameters, return value and exception; production `block.setControl` remains guarded.
 
 Still unverified: the `SET_OBJECT_PROPERTY` mutation on a disposable project, read-after-write, Capture correlation, and restore. The documented ADI order is implemented in a unit-tested invocation builder, but production control writes remain guarded until the destructive HIL policy is satisfied.
 

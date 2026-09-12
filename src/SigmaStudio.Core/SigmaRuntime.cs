@@ -45,6 +45,11 @@ public sealed class SigmaRuntime
         return await ExecuteReadOnlyAsync("sigma_property_probe_get_control_value", "property.probeGetControlValue", input, ct);
     }
 
+    public async Task<SigmaToolResult<object?>> PropertyProbeSetControlValueAsync(PropertyProbeSetControlValueInput input, CancellationToken ct)
+    {
+        return await ExecuteReadOnlyAsync("sigma_property_probe_set_control_value", "property.probeSetControlValue", input, ct);
+    }
+
     public Task<SigmaToolResult<object?>> StatusAsync(CancellationToken ct) => ReadAsync("sigma_status", ct, snapshot => snapshot.State);
 
     public async Task<SigmaToolResult<object?>> ReadyForMeasurementAsync(CancellationToken ct)
