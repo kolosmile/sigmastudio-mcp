@@ -12,7 +12,7 @@ public sealed class StructuralMutationHilTests
     [Trait("Category", "HIL")]
     public async Task Live_connection_disconnect_and_reconnect_is_reflected_in_graph()
     {
-        if (!MutationEnabled()) return;
+        if (!StructuralEnabled()) return;
         var projectPath = RequireProject();
         var runtime = CreateRuntime();
 
@@ -53,7 +53,7 @@ public sealed class StructuralMutationHilTests
     [Trait("Category", "HIL")]
     public async Task Failed_structural_transaction_restores_original_fingerprint()
     {
-        if (!MutationEnabled()) return;
+        if (!StructuralEnabled()) return;
         RequireProject();
         var runtime = CreateRuntime();
         var before = await GetLiveGraphAsync(runtime);
@@ -86,7 +86,7 @@ public sealed class StructuralMutationHilTests
     [Trait("Category", "HIL")]
     public async Task Structural_change_persists_after_save_close_and_reopen()
     {
-        if (!MutationEnabled()) return;
+        if (!StructuralEnabled()) return;
         var projectPath = RequireProject();
         var runtime = CreateRuntime();
         var before = await GetLiveGraphAsync(runtime);
@@ -129,9 +129,10 @@ public sealed class StructuralMutationHilTests
         return Assert.IsType<ProjectGraphDto>(result.Data);
     }
 
-    private static bool MutationEnabled() =>
+    private static bool StructuralEnabled() =>
         string.Equals(Environment.GetEnvironmentVariable("SIGMASTUDIO_MCP_HIL"), "1", StringComparison.Ordinal) &&
-        string.Equals(Environment.GetEnvironmentVariable("SIGMASTUDIO_MCP_HIL_MUTATION"), "1", StringComparison.Ordinal);
+        string.Equals(Environment.GetEnvironmentVariable("SIGMASTUDIO_MCP_HIL_MUTATION"), "1", StringComparison.Ordinal) &&
+        string.Equals(Environment.GetEnvironmentVariable("SIGMASTUDIO_MCP_HIL_STRUCTURAL"), "1", StringComparison.Ordinal);
 
     private static string RequireProject()
     {

@@ -34,6 +34,22 @@ The live parser uses `EXPORT_SYSTEM_FILES`, `*_NetList.xml` for topology, and th
 
 The non-HIL suite also covers deterministic export IDs, graph fingerprints, revision-guarded mutations, transaction diff/rollback, and the accessibility-based Capture observer. The installed Toolbox catalog is intentionally reported as unavailable unless a runtime enumeration is verified.
 
+## Disposable control-write HIL
+
+The opt-in mutation gate now verifies the local developer probe end to end: it reads the original `Gain1.Gain`, writes `0.25`, verifies the readback, observes a new Capture entry, and restores the original value. This does not enable production `sigma_block_set_control`; that tool remains guarded until the production contract is promoted deliberately.
+
+```powershell
+$env:SIGMASTUDIO_MCP_HIL = "1"
+$env:SIGMASTUDIO_MCP_HIL_MUTATION = "1"
+$env:SIGMASTUDIO_MCP_HIL_PROJECT = "C:\path\to\control-write-test.hil.dspproj"
+$env:SIGMASTUDIO_MCP_HIL_NEW_VALUE = "0.25"
+dotnet test tests/SigmaStudio.IntegrationTests/SigmaStudio.IntegrationTests.csproj -c Release --filter "FullyQualifiedName~MutationHilTests.Disposable_control_write_is_read_back_captured_and_restored"
+```
+
+Structural connection tests require a dedicated small disposable Input → Gain → Output project. The currently supplied large two-IC design is suitable for graph/control observation, but it is not accepted as structural proof because its server pin indices do not map directly from exported `P<n>` numbers and removing some internal edges makes `EXPORT_SYSTEM_FILES` fail.
+
+Structural tests are separately gated with `SIGMASTUDIO_MCP_HIL_STRUCTURAL=1`, so the control-write HIL command above cannot accidentally mutate a production-sized project.
+
 ## Capture clipboard HIL
 
 The opt-in Capture test verifies the local 4.7 owner-drawn grid route. It selects the visible range, right-clicks in the text area, waits for the context menu, invokes `Down` + `Enter`, parses the clipboard into structured entries, and requires a non-empty selected-range result.

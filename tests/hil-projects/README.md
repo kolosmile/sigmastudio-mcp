@@ -14,13 +14,19 @@ project below this `tests/hil-projects` directory. Do not point the mutation gat
 an ordinary user project.
 
 The first required fixture is a small ADAU1701 Input → scalar control block → Output
-design. The test block and control are selected with:
+design. A large production design may be used for graph/control observation, but it
+is not sufficient structural proof: SigmaStudio 4.7 server pin indices are not
+guaranteed to equal the exported NetList `P<n>` numbers, and removing an internal
+edge can leave the design temporarily non-exportable. The test block and control
+are selected with:
 
     $env:SIGMASTUDIO_MCP_HIL_OBJECT = "Gain1"
     $env:SIGMASTUDIO_MCP_HIL_CONTROL = "Gain"
     $env:SIGMASTUDIO_MCP_HIL_NEW_VALUE = "0.25"
 
 For structural connection HIL, additionally select one existing edge:
+
+    $env:SIGMASTUDIO_MCP_HIL_STRUCTURAL = "1"
 
     $env:SIGMASTUDIO_MCP_HIL_SOURCE = "Gain1"
     $env:SIGMASTUDIO_MCP_HIL_TARGET = "Output1"
