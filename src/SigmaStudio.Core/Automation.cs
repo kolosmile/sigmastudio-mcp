@@ -72,6 +72,8 @@ public sealed class InMemorySigmaStudioAutomation : ISigmaStudioAutomation
             "project.undo" => Undo(),
             "project.redo" => Redo(),
             "project.export" => AutomationResult.Success(_graph),
+            "graph.refreshLive" => AutomationResult.Success(_graph with { Freshness = GraphFreshness.Fresh }),
+            "catalog.discovery" => AutomationResult.Success(new CatalogDiscoveryDto(false, "in-memory", [], ["Installed SigmaStudio Toolbox is unavailable in the in-memory backend."])),
             "graph.link" => Build(SigmaStudioState.ReadyCompiled),
             "graph.compile" => Build(SigmaStudioState.ReadyCompiled),
             "graph.download" => Download(),

@@ -37,9 +37,10 @@ public sealed class GraphParser
             }
         }
 
+        var graph = new ProjectGraphDto(project, blocks, connections, designRevision, GraphFreshness.Fresh, unknown.Distinct(StringComparer.OrdinalIgnoreCase).ToArray());
         return new GraphParseResult
         {
-            Graph = new ProjectGraphDto(project, blocks, connections, designRevision, GraphFreshness.Fresh, unknown.Distinct(StringComparer.OrdinalIgnoreCase).ToArray()),
+            Graph = GraphIdentity.WithIdentity(graph),
             UnknownFields = unknown.Distinct(StringComparer.OrdinalIgnoreCase).ToArray()
         };
     }
@@ -103,7 +104,7 @@ public sealed class GraphParser
         var block = (string?)endpoint.Attribute("block") ?? FindValue(endpoint, "Block");
         var name = (string?)endpoint.Attribute("pinName") ?? (string?)endpoint.Attribute("name") ?? FindValue(endpoint, "PinName") ?? "";
         var index = ParseInt((string?)endpoint.Attribute("pinIndex") ?? (string?)endpoint.Attribute("index") ?? FindValue(endpoint, "PinIndex"), 0);
-        return string.IsNullOrWhiteSpace(block) ? null : new PinRefDto(block, index, name);
+        return string.IsNullOrWhiteSpace(block) ? null : new PinRefDto(block!, index, name);
     }
 
     private static IReadOnlyList<PinDto> ParsePins(XElement element, params string[] names)

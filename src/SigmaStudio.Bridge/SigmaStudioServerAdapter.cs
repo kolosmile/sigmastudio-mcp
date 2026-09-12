@@ -2,6 +2,7 @@ using System.Reflection;
 using System.IO;
 using System.Text.Json;
 using SigmaStudio.Contracts;
+using SigmaStudio.Graph;
 
 namespace SigmaStudio.Bridge;
 
@@ -16,6 +17,9 @@ public sealed class SigmaStudioServerAdapter
     private long _runtimeRevision;
     private long? _deployedDesignRevision;
     private bool _dirty;
+    private ProjectGraphDto? _liveGraph;
+    private readonly SigmaStudioExportReader _exportReader = new();
+    private string? _lastCheckpointDirectory;
 
     public SigmaStudioServerAdapter(string? configuredPath) => _configuredPath = configuredPath;
 
@@ -25,7 +29,9 @@ public sealed class SigmaStudioServerAdapter
     [
         "project.create", "project.open", "project.save", "project.saveAs", "project.close", "project.checkpoint",
         "project.undo", "project.redo", "project.export", "graph.link", "graph.compile", "graph.download",
-        "block.add", "block.remove", "block.rename", "block.setControl", "block.setControls", "connection.add", "connection.remove"
+        "graph.refreshLive",
+        "catalog.discovery",
+        "block.add", "block.remove", "block.rename", "block.getControls", "block.setControl", "block.setControls", "connection.add", "connection.remove"
     ];
 
     public object Probe()
@@ -41,6 +47,15 @@ public sealed class SigmaStudioServerAdapter
                 .Select(m => m.Name)
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+                .ToArray(),
+            signatures = serverType.GetMethods(BindingFlags.Instance | BindingFlags.Public)
+                .Where(m => new[] { "GET_OBJECT_PROPERTY", "SET_OBJECT_PROPERTY", "INSERT_BLOCKOBJECT", "INSERT_BLOCKOBJECT_POINT", "INSERT_OBJECT", "INSERT_OBJECT_POINT", "CONNECT_OBJECT", "DISCONNECT_OBJECT" }.Contains(m.Name, StringComparer.OrdinalIgnoreCase))
+                .Select(m => new
+                {
+                    name = m.Name,
+                    parameters = m.GetParameters().Select(p => new { p.Name, type = p.ParameterType.FullName }).ToArray(),
+                    returnType = m.ReturnType.FullName
+                })
                 .ToArray()
         };
     }
@@ -50,21 +65,21 @@ public sealed class SigmaStudioServerAdapter
         var projectState = new ProjectStateDto(
             _projectPath,
             _projectPath is null ? null : Path.GetFileNameWithoutExtension(_projectPath),
-            "ADAU1701",
-            48000,
+            _liveGraph?.Project.Chip ?? "ADAU1701",
+            _liveGraph?.Project.SampleRateHz ?? 48000,
             _dirty,
             _designRevision,
             _runtimeRevision,
             _deployedDesignRevision,
             _state,
             _state == SigmaStudioState.ActiveDownloaded && _deployedDesignRevision == _designRevision);
-        var graph = new ProjectGraphDto(
-            new ProjectIdentityDto(_projectPath, "ADAU1701", 48000),
+        var graph = _liveGraph ?? new ProjectGraphDto(
+            new ProjectIdentityDto(_projectPath, _liveGraph?.Project.Chip ?? "ADAU1701", _liveGraph?.Project.SampleRateHz ?? 48000),
             [],
             [],
             _designRevision,
             GraphFreshness.Cached,
-            ["Live SigmaStudio graph extraction is not yet available from the 4.7 server API."]);
+            ["Live graph is not loaded. Call sigma_graph_get with refresh=live."]);
         return new AutomationSnapshot(projectState, graph, [], BackendName, IsLoaded);
     }
 
@@ -87,7 +102,7 @@ public sealed class SigmaStudioServerAdapter
                 case "project.close":
                     return Invoke(method, "CLOSE_PROJECT");
                 case "project.export":
-                    return Invoke(method, "EXPORT_SYSTEM_FILES", RequiredString(payload, "path"));
+                    return ExportAndRefresh(RequiredString(payload, "path"));
                 case "project.undo":
                     return Invoke(method, "UNDO_SCRIPT");
                 case "project.redo":
@@ -98,17 +113,24 @@ public sealed class SigmaStudioServerAdapter
                     return Invoke(method, "COMPILE");
                 case "graph.download":
                     return Invoke(method, "DOWNLOAD");
+                case "graph.refreshLive":
+                    return ExportLiveGraph();
+                case "block.getControls":
+                    return RefreshBlockControls(RequiredString(payload, "block"));
+                case "catalog.discovery":
+                    return CatalogDiscovery();
                 case "block.remove":
                     return Invoke(method, "REMOVE_OBJECT", RequiredString(payload, "block"));
                 case "connection.add":
+                    var add = RequiredConnection(payload);
                     return Invoke(method, "CONNECT_OBJECT",
-                        RequiredString(payload, "sourceBlock"), RequiredInt(payload, "sourcePinIndex"),
-                        RequiredString(payload, "targetBlock"), RequiredInt(payload, "targetPinIndex"));
+                        add.SourceBlock, add.SourcePinIndex, add.TargetBlock, add.TargetPinIndex);
                 case "connection.remove":
+                    var remove = RequiredConnection(payload);
                     return Invoke(method, "DISCONNECT_OBJECT",
-                        RequiredString(payload, "sourceBlock"), RequiredInt(payload, "sourcePinIndex"),
-                        RequiredString(payload, "targetBlock"), RequiredInt(payload, "targetPinIndex"));
+                        remove.SourceBlock, remove.SourcePinIndex, remove.TargetBlock, remove.TargetPinIndex);
                 case "project.checkpoint":
+                    return CreateCheckpoint();
                 case "block.add":
                 case "block.rename":
                 case "block.setControl":
@@ -163,6 +185,7 @@ public sealed class SigmaStudioServerAdapter
                 _runtimeRevision = 0;
                 _dirty = false;
                 _deployedDesignRevision = null;
+                _liveGraph = null;
                 break;
             case "project.save":
             case "project.saveAs":
@@ -174,6 +197,7 @@ public sealed class SigmaStudioServerAdapter
                 _state = SigmaStudioState.NoProject;
                 _dirty = false;
                 _deployedDesignRevision = null;
+                _liveGraph = null;
                 break;
             case "graph.link":
             case "graph.compile":
@@ -190,7 +214,136 @@ public sealed class SigmaStudioServerAdapter
                 _dirty = true;
                 _state = SigmaStudioState.DesignMode;
                 _deployedDesignRevision = null;
+                if (_liveGraph is not null) _liveGraph = _liveGraph with { Freshness = GraphFreshness.Stale, Warnings = [.. (_liveGraph.Warnings ?? []), "Graph changed; refreshLive is required to re-read SigmaStudio."] };
                 break;
+        }
+    }
+
+    private AdapterResult ExportAndRefresh(string exportPath)
+    {
+        var result = Invoke("project.export", "EXPORT_SYSTEM_FILES", exportPath);
+        if (!result.Ok) return result;
+        try
+        {
+            var directory = Path.GetDirectoryName(Path.GetFullPath(exportPath));
+            if (string.IsNullOrWhiteSpace(directory)) throw new InvalidOperationException("The export path has no directory.");
+            _liveGraph = _exportReader.Read(directory, _projectPath, _designRevision).Graph;
+            return AdapterResult.Success(new { exportPath, graph = _liveGraph });
+        }
+        catch (Exception ex)
+        {
+            return AdapterResult.Failure("GRAPH_EXTRACTION_FAILED", $"SigmaStudio export completed but graph extraction failed: {ex.Message}");
+        }
+    }
+
+    private AdapterResult ExportLiveGraph()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "sigmastudio-mcp", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        var exportPath = Path.Combine(directory, "live-graph");
+        try
+        {
+            var result = Invoke("project.export", "EXPORT_SYSTEM_FILES", exportPath);
+            if (!result.Ok) return result;
+            _liveGraph = _exportReader.Read(directory, _projectPath, _designRevision).Graph;
+            return AdapterResult.Success(new { graph = _liveGraph, exportPath });
+        }
+        catch (Exception ex)
+        {
+            return AdapterResult.Failure("GRAPH_EXTRACTION_FAILED", $"Live SigmaStudio graph extraction failed: {ex.Message}");
+        }
+        finally
+        {
+            try { if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true); } catch { }
+        }
+    }
+
+    private AdapterResult CreateCheckpoint()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "sigmastudio-mcp", "checkpoint-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        var exportPath = Path.Combine(directory, "checkpoint");
+        var result = Invoke("project.export", "EXPORT_SYSTEM_FILES", exportPath);
+        if (!result.Ok)
+        {
+            try { Directory.Delete(directory, true); } catch { }
+            return result;
+        }
+        if (_lastCheckpointDirectory is not null && Directory.Exists(_lastCheckpointDirectory))
+        {
+            try { Directory.Delete(_lastCheckpointDirectory, true); } catch { }
+        }
+        _lastCheckpointDirectory = directory;
+        return AdapterResult.Success(new { path = directory, exportPath, rollback = "project.undo" });
+    }
+
+    private AdapterResult CatalogDiscovery()
+    {
+        EnsureLoaded();
+        var runtimeMethods = _server!.GetType().GetMethods(BindingFlags.Instance | BindingFlags.Public).Select(method => method.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var verified = new[] { "EXPORT_SYSTEM_FILES", "INSERT_BLOCKOBJECT", "INSERT_BLOCKOBJECT_POINT", "REMOVE_OBJECT", "CONNECT_OBJECT", "DISCONNECT_OBJECT" }
+            .Where(runtimeMethods.Contains).ToArray();
+        return AdapterResult.Success(new CatalogDiscoveryDto(
+            false,
+            "SigmaStudioServer public method surface",
+            verified,
+            ["The 4.7 server API does not expose a verified installed Toolbox enumeration. Catalog availability remains Wiki metadata plus per-block runtime verification."]));
+    }
+
+    private AdapterResult RefreshBlockControls(string blockName)
+    {
+        var export = ExportLiveGraph();
+        if (!export.Ok || _liveGraph is null) return export;
+        var block = _liveGraph.Blocks.FirstOrDefault(candidate => string.Equals(candidate.Id, blockName, StringComparison.OrdinalIgnoreCase) || string.Equals(candidate.ObjectName, blockName, StringComparison.OrdinalIgnoreCase));
+        if (block is null) return AdapterResult.Failure("BLOCK_NOT_FOUND", $"Block '{blockName}' was not found in the live graph.");
+
+        var readCount = 0;
+        var controls = block.Controls.Select(control =>
+        {
+            if (!TryGetControlValue(block.ObjectName, control.Name, out var value)) return control;
+            readCount++;
+            return control with { Value = value, Source = "live-sigmastudio-property", Freshness = GraphFreshness.Fresh };
+        }).ToArray();
+        var warnings = (_liveGraph.Warnings ?? []).ToList();
+        if (readCount == 0) warnings.Add($"CONTROL_READBACK_UNAVAILABLE: GET_OBJECT_PROPERTY did not return a value for '{block.ObjectName}'.");
+        _liveGraph = GraphIdentity.WithIdentity(_liveGraph with
+        {
+            Blocks = _liveGraph.Blocks.Select(candidate => candidate.Id == block.Id ? candidate with { Controls = controls } : candidate).ToArray(),
+            Warnings = warnings.Distinct(StringComparer.Ordinal).ToArray()
+        });
+        return AdapterResult.Success(new { block = block.ObjectName, readCount, controls });
+    }
+
+    private bool TryGetControlValue(string objectName, string controlName, out double? value)
+    {
+        value = null;
+        var method = _server!.GetType().GetMethods(BindingFlags.Instance | BindingFlags.Public)
+            .FirstOrDefault(candidate => string.Equals(candidate.Name, "GET_OBJECT_PROPERTY", StringComparison.OrdinalIgnoreCase) && candidate.GetParameters().Length == 4);
+        if (method is null) return false;
+        var arguments = new object?[] { "getControlValue", objectName, Array.Empty<object>(), new object[] { controlName } };
+        try
+        {
+            var returned = method.Invoke(_server, arguments);
+            if (returned is bool success && !success) return false;
+            if (arguments[2] is not object[] values || values.Length == 0 || values[0] is null) return false;
+            value = values[0] switch
+            {
+                bool boolean => boolean ? 1 : 0,
+                byte number => number,
+                short number => number,
+                int number => number,
+                long number => number,
+                float number => number,
+                double number => number,
+                decimal number => (double)number,
+                _ when double.TryParse(values[0].ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var parsed) => parsed,
+                _ => null
+            };
+            return value is not null;
+        }
+        catch
+        {
+            return false;
         }
     }
 
@@ -206,6 +359,26 @@ public sealed class SigmaStudioServerAdapter
         if (payload.ValueKind != JsonValueKind.Object || !payload.TryGetProperty(name, out var value) || !value.TryGetInt32(out var result))
             throw new ArgumentException($"Integer parameter '{name}' is required.");
         return result;
+    }
+
+    private static ConnectionEndpoints RequiredConnection(JsonElement payload)
+    {
+        if (payload.ValueKind != JsonValueKind.Object) throw new ArgumentException("Connection parameters must be an object.");
+        var source = payload.TryGetProperty("source", out var nestedSource) ? nestedSource : payload;
+        var target = payload.TryGetProperty("target", out var nestedTarget) ? nestedTarget : payload;
+        var sourceBlock = nestedSource.ValueKind != JsonValueKind.Undefined
+            ? RequiredString(source, "block")
+            : RequiredString(payload, "sourceBlock");
+        var targetBlock = nestedTarget.ValueKind != JsonValueKind.Undefined
+            ? RequiredString(target, "block")
+            : RequiredString(payload, "targetBlock");
+        var sourcePinIndex = nestedSource.ValueKind != JsonValueKind.Undefined
+            ? RequiredInt(source, "pinIndex")
+            : RequiredInt(payload, "sourcePinIndex");
+        var targetPinIndex = nestedTarget.ValueKind != JsonValueKind.Undefined
+            ? RequiredInt(target, "pinIndex")
+            : RequiredInt(payload, "targetPinIndex");
+        return new ConnectionEndpoints(sourceBlock, sourcePinIndex, targetBlock, targetPinIndex);
     }
 
     private void EnsureLoaded()
@@ -256,6 +429,8 @@ public sealed class SigmaStudioServerAdapter
         "block.setControl" or "block.setControls" => "SET_OBJECT_PROPERTY",
         _ => method
     };
+
+    private sealed record ConnectionEndpoints(string SourceBlock, int SourcePinIndex, string TargetBlock, int TargetPinIndex);
 }
 
 public sealed record AdapterResult(bool Ok, object? Result = null, BridgeError? Error = null)

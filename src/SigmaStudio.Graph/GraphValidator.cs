@@ -14,8 +14,8 @@ public sealed class GraphValidator
         foreach (var block in graph.Blocks)
         {
             if (string.IsNullOrWhiteSpace(block.ObjectName)) issues.Add(new("BLOCK_NAME_EMPTY", "Block object name is empty."));
-            if (block.Inputs.GroupBy(p => p.Index).Any(g => g.Count() > 1)) issues.Add(new("DUPLICATE_INPUT_PIN", "Block has duplicate input pin indices.", block.ObjectName));
-            if (block.Outputs.GroupBy(p => p.Index).Any(g => g.Count() > 1)) issues.Add(new("DUPLICATE_OUTPUT_PIN", "Block has duplicate output pin indices.", block.ObjectName));
+            if (block.Inputs.GroupBy(p => $"{p.Index}:{p.Name}", StringComparer.OrdinalIgnoreCase).Any(g => g.Count() > 1)) issues.Add(new("DUPLICATE_INPUT_PIN", "Block has duplicate input pin identities.", block.ObjectName));
+            if (block.Outputs.GroupBy(p => $"{p.Index}:{p.Name}", StringComparer.OrdinalIgnoreCase).Any(g => g.Count() > 1)) issues.Add(new("DUPLICATE_OUTPUT_PIN", "Block has duplicate output pin identities.", block.ObjectName));
         }
 
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -26,7 +26,7 @@ public sealed class GraphValidator
             if (!blocks.TryGetValue(connection.Target.Block, out var target)) issues.Add(new("BLOCK_NOT_FOUND", "Connection target block does not exist.", connection.Target.Block));
             else if (!target.Inputs.Any(p => p.Index == connection.Target.PinIndex || string.Equals(p.Name, connection.Target.PinName, StringComparison.OrdinalIgnoreCase))) issues.Add(new("PIN_NOT_FOUND", "Connection target pin does not exist.", connection.Target.Block));
 
-            var key = $"{connection.Source.Block}:{connection.Source.PinIndex}->{connection.Target.Block}:{connection.Target.PinIndex}";
+            var key = $"{connection.Source.Block}:{connection.Source.PinIndex}:{connection.Source.PinName}->{connection.Target.Block}:{connection.Target.PinIndex}:{connection.Target.PinName}";
             if (!seen.Add(key)) issues.Add(new("DUPLICATE_CONNECTION", "Connection is duplicated."));
         }
 

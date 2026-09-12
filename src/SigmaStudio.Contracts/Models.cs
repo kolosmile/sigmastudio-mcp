@@ -36,7 +36,13 @@ public sealed record ControlDto(
     double? Min = null,
     double? Max = null,
     IReadOnlyList<string>? Enum = null,
-    string? Unit = null);
+    string? Unit = null,
+    string? ControlId = null,
+    string? Description = null,
+    string? ValueType = null,
+    string? UpdateMode = null,
+    string? Source = null,
+    GraphFreshness? Freshness = null);
 
 public sealed record ParameterDto(string Name, string? Address, string? Format, double? Value);
 
@@ -51,13 +57,16 @@ public sealed record BlockDto(
     IReadOnlyList<PinDto> Outputs,
     IReadOnlyList<ControlDto> Controls,
     IReadOnlyList<ParameterDto> Parameters,
-    GraphPositionDto? Position = null);
+    GraphPositionDto? Position = null,
+    string? HierarchyPath = null,
+    string? NativeObjectType = null,
+    string? NativeObjectId = null);
 
 public sealed record GraphPositionDto(double X, double Y);
 
-public sealed record PinRefDto(string Block, int PinIndex, string PinName);
+public sealed record PinRefDto(string Block, int PinIndex, string PinName, string? BlockId = null);
 
-public sealed record ConnectionDto(PinRefDto Source, PinRefDto Target);
+public sealed record ConnectionDto(PinRefDto Source, PinRefDto Target, string? Id = null, string? NativeLinkId = null);
 
 public sealed record ProjectGraphDto(
     ProjectIdentityDto Project,
@@ -65,7 +74,9 @@ public sealed record ProjectGraphDto(
     IReadOnlyList<ConnectionDto> Connections,
     long DesignRevision,
     GraphFreshness Freshness,
-    IReadOnlyList<string>? Warnings = null);
+    IReadOnlyList<string>? Warnings = null,
+    DateTimeOffset? ObservedAt = null,
+    string? GraphFingerprint = null);
 
 public sealed record ProjectIdentityDto(string? Path, string Chip, int SampleRateHz);
 
@@ -123,7 +134,8 @@ public sealed record CatalogBlockDto(
     IReadOnlyList<string> Warnings,
     IReadOnlyDictionary<string, string> Automation,
     CatalogSourceDto Source,
-    string? Description = null);
+    string? Description = null,
+    bool? AvailableInInstalledSigmaStudio = null);
 
 public sealed record OperationErrorDto(string Code, string Message, IReadOnlyDictionary<string, object?>? Details = null);
 
@@ -151,6 +163,29 @@ public sealed record ProjectCreateInput(string Path, int SampleRateHz = 48000);
 public sealed record ProjectSaveAsInput(string Path, bool Overwrite = false);
 
 public sealed record GraphGetInput(string Refresh = "cached");
+
+public sealed record GraphTransactionInput(
+    long ExpectedDesignRevision,
+    IReadOnlyList<JsonElement> Operations,
+    bool Validate = true,
+    bool Deploy = false,
+    string? MutationId = null);
+
+public sealed record GraphDiffDto(
+    long PreviousRevision,
+    long NewRevision,
+    IReadOnlyList<string> BlocksAdded,
+    IReadOnlyList<string> BlocksRemoved,
+    IReadOnlyList<string> ConnectionsAdded,
+    IReadOnlyList<string> ConnectionsRemoved,
+    IReadOnlyList<string> ControlsChanged);
+
+public sealed record GraphTransactionResultDto(
+    GraphDiffDto Diff,
+    ProjectGraphDto Graph,
+    bool Validated,
+    bool Deployed,
+    bool ProjectStateUncertain = false);
 
 public sealed record BlockAddInput(
     string CatalogId,
@@ -215,4 +250,10 @@ public sealed record DiagnosticsDto(
     string? SigmaStudioServerPath,
     string? UiAutomationStatus,
     string CatalogVersion,
+    IReadOnlyList<string> Warnings);
+
+public sealed record CatalogDiscoveryDto(
+    bool AvailableInInstalledSigmaStudio,
+    string Source,
+    IReadOnlyList<string> VerifiedAutomationMethods,
     IReadOnlyList<string> Warnings);

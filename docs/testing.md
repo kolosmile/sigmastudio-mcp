@@ -20,3 +20,16 @@ dotnet build src/SigmaStudio.Bridge -c Release -f net48
 ```
 
 A 2026-09-12-i helyi futtatási ellenőrzésen a bridge példányosította a 4.7.0.1827 szervert, a UI Automation megtalálta az aktív SigmaStudio ablakot, majd az MCP hoston keresztül a `sigma_compile`, `sigma_link` és `sigma_download` műveletek sikeresek voltak. A visszaolvasott állapot `ActiveDownloaded`, `readyForMeasurement=true` lett. A projektfájl mentése nem történt.
+
+## Live graph acceptance
+
+The opt-in HIL test `Live_graph_extraction_is_opt_in_and_returns_stable_topology` calls the running Bridge, requests `graph.refreshLive`, and verifies non-empty topology plus stable IDs across two exports. It does not save the project.
+
+```powershell
+$env:SIGMASTUDIO_MCP_HIL = "1"
+dotnet test tests/SigmaStudio.IntegrationTests/SigmaStudio.IntegrationTests.csproj -c Release --filter "Category=HIL"
+```
+
+The live parser uses `EXPORT_SYSTEM_FILES`, `*_NetList.xml` for topology, and the schematic XML for module controls and parameters. If export parsing fails, the Bridge returns `GRAPH_EXTRACTION_FAILED` and does not fabricate a graph.
+
+The non-HIL suite also covers deterministic export IDs, graph fingerprints, revision-guarded mutations, transaction diff/rollback, and the accessibility-based Capture observer. The installed Toolbox catalog is intentionally reported as unavailable unless a runtime enumeration is verified.

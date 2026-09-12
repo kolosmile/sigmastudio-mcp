@@ -51,6 +51,9 @@ public sealed class SigmaTools
     [McpServerTool(Name = "sigma_graph_get", ReadOnly = true, Idempotent = true, UseStructuredContent = true), Description("Read the semantic DSP graph; refresh can be cached or compile.")]
     public Task<SigmaToolResult<object?>> GraphGet(GraphGetInput input, CancellationToken cancellationToken) => _runtime.GraphGetAsync(input, cancellationToken);
 
+    [McpServerTool(Name = "sigma_graph_transaction", UseStructuredContent = true), Description("Execute a guarded multi-operation graph transaction with checkpoint, validation and rollback.")]
+    public Task<SigmaToolResult<object?>> GraphTransaction(GraphTransactionInput input, CancellationToken cancellationToken) => _runtime.GraphTransactionAsync(input, cancellationToken);
+
     [McpServerTool(Name = "sigma_graph_validate", ReadOnly = true, Idempotent = true, UseStructuredContent = true), Description("Validate graph block, pin and connection references.")]
     public Task<SigmaToolResult<object?>> GraphValidate(CancellationToken cancellationToken) => _runtime.GraphValidateAsync(cancellationToken);
 
@@ -60,8 +63,11 @@ public sealed class SigmaTools
     [McpServerTool(Name = "sigma_block_docs", ReadOnly = true, Idempotent = true, UseStructuredContent = true), Description("Return normalized, provenance-bearing documentation for a catalog block.")]
     public Task<SigmaToolResult<object?>> BlockDocs(string catalogId, CancellationToken cancellationToken) => _runtime.BlockDocsAsync(catalogId, cancellationToken);
 
-    [McpServerTool(Name = "sigma_block_get", ReadOnly = true, Idempotent = true, UseStructuredContent = true), Description("Read one block from the current semantic graph.")]
-    public Task<SigmaToolResult<object?>> BlockGet(string block, CancellationToken cancellationToken) => _runtime.BlockGetAsync(block, cancellationToken);
+    [McpServerTool(Name = "sigma_catalog_discovery", ReadOnly = true, Idempotent = true, UseStructuredContent = true), Description("Report whether the installed SigmaStudio runtime exposes a verified Toolbox catalog and which automation methods were observed.")]
+    public Task<SigmaToolResult<object?>> CatalogDiscovery(CancellationToken cancellationToken) => _runtime.CatalogDiscoveryAsync(cancellationToken);
+
+    [McpServerTool(Name = "sigma_block_get", ReadOnly = true, Idempotent = true, UseStructuredContent = true), Description("Read one block by stable blockId (or legacy objectName), including current control metadata; refreshControls forces a fresh live export.")]
+    public Task<SigmaToolResult<object?>> BlockGet(string block, bool refreshControls = false, CancellationToken cancellationToken = default) => _runtime.BlockGetAsync(block, refreshControls, cancellationToken);
 
     [McpServerTool(Name = "sigma_block_add", UseStructuredContent = true), Description("Add an ADAU1701 block using catalog metadata and a guarded mutation contract.")]
     public Task<SigmaToolResult<object?>> BlockAdd(BlockAddInput input, CancellationToken cancellationToken) => _runtime.BlockAddAsync(input, cancellationToken);

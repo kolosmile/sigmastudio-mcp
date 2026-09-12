@@ -1,4 +1,5 @@
 global using Xunit;
+using System.Text.Json;
 using SigmaStudio.Catalog;
 using SigmaStudio.Contracts;
 using SigmaStudio.Core;
@@ -42,5 +43,35 @@ public sealed class RuntimeTests
         var result = await runtime.BlockRenameAsync(new BlockRenameInput("Gain1", "Gain2", new MutationInput(999, Guid.NewGuid().ToString("N"))), CancellationToken.None);
         Assert.False(result.Ok);
         Assert.Equal("STALE_REVISION", result.Error!.Code);
+    }
+
+    [Fact]
+    public async Task Graph_transaction_returns_diff_and_rolls_back_failed_operation()
+    {
+        var runtime = CreateRuntime();
+        await runtime.ProjectCreateAsync(new ProjectCreateInput(Path.Combine(Path.GetTempPath(), "transaction.dspproj")), CancellationToken.None);
+        var status = await runtime.StatusAsync(CancellationToken.None);
+
+        var success = await runtime.GraphTransactionAsync(new GraphTransactionInput(
+            status.DesignRevision,
+            [JsonSerializer.SerializeToElement(new { type = "addBlock", catalogId = "volume.linear_gain", objectName = "Gain2", x = 500, y = 0 })],
+            Validate: true,
+            MutationId: "tx-success"), CancellationToken.None);
+
+        Assert.True(success.Ok, success.Error?.Message);
+        var successData = Assert.IsType<GraphTransactionResultDto>(success.Data);
+        Assert.Single(successData.Diff.BlocksAdded);
+
+        var after = await runtime.StatusAsync(CancellationToken.None);
+        var failed = await runtime.GraphTransactionAsync(new GraphTransactionInput(
+            after.DesignRevision,
+            [JsonSerializer.SerializeToElement(new { type = "removeBlock", blockId = "does-not-exist" })],
+            Validate: true,
+            MutationId: "tx-failed"), CancellationToken.None);
+
+        Assert.False(failed.Ok);
+        Assert.True(failed.RollbackAttempted);
+        Assert.True(failed.RollbackSucceeded);
+        Assert.Equal("BLOCK_NOT_FOUND", failed.Error!.Code);
     }
 }

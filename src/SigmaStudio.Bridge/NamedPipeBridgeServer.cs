@@ -83,7 +83,7 @@ public sealed class NamedPipeBridgeServer
                     "bridge.get_version" => Success(request.Id, new { version = "0.1.0", targetFramework = ".NET 8 Windows" }),
                     "bridge.get_capabilities" => Success(request.Id, new BridgeCapabilities("0.1.0", _adapter.BackendName, _adapter.IsLoaded, _observer.IsAvailable, _adapter.Methods)),
                     "bridge.probe" => Success(request.Id, _adapter.Probe()),
-                    "bridge.get_snapshot" => Success(request.Id, _adapter.GetSnapshot()),
+                    "bridge.get_snapshot" => Success(request.Id, _adapter.GetSnapshot() with { Capture = _observer.ReadCaptureEntries() }),
                     "bridge.ui_status" => Success(request.Id, _observer.ReadStatus()),
                     "bridge.capture_get" => Success(request.Id, _observer.ReadCapture()),
                     _ => DispatchAdapter(request)

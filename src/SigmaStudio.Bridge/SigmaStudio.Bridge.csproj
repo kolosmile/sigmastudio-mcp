@@ -11,5 +11,6 @@
     <PackageReference Include="System.ServiceModel.NetNamedPipe" Condition="'$(TargetFramework)' == 'net8.0-windows'" />
     <PackageReference Include="System.Text.Json" Condition="'$(TargetFramework)' == 'net48'" />
     <ProjectReference Include="..\SigmaStudio.Contracts\SigmaStudio.Contracts.csproj" />
+    <ProjectReference Include="..\SigmaStudio.Graph\SigmaStudio.Graph.csproj" />
   </ItemGroup>
 </Project>
