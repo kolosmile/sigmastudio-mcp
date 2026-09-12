@@ -36,7 +36,7 @@ The non-HIL suite also covers deterministic export IDs, graph fingerprints, revi
 
 ## Disposable control-write HIL
 
-The opt-in mutation gate now verifies the local developer probe end to end: it reads the original `Gain1.Gain`, writes `0.25`, verifies the readback, observes a new Capture entry, and restores the original value. This does not enable production `sigma_block_set_control`; that tool remains guarded until the production contract is promoted deliberately.
+The opt-in mutation gate exercises the production `sigma_block_set_control` path end to end: it reads the original `Gain1.Gain`, writes `0.25` through `SET_OBJECT_PROPERTY`, verifies the live readback, observes a new Capture entry, and restores the original value. The runtime only reports success after the readback and Capture checks pass; a failed verification attempts an explicit restore. The project must already be open in SigmaStudio and the test does not save it.
 
 ```powershell
 $env:SIGMASTUDIO_MCP_HIL = "1"

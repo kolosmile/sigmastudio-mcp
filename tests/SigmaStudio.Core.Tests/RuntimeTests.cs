@@ -30,6 +30,9 @@ public sealed class RuntimeTests
         var control = await runtime.BlockSetControlAsync(new SetControlInput("Gain1", "Gain", 3, new MutationInput(before.DesignRevision, Guid.NewGuid().ToString("N"))), CancellationToken.None);
 
         Assert.True(control.Ok, control.Error?.Message);
+        var controlData = JsonSerializer.SerializeToElement(control.Data);
+        Assert.True(controlData.GetProperty("verified").GetBoolean());
+        Assert.True(controlData.GetProperty("captureEvidence").GetProperty("available").GetBoolean());
         var ready = await runtime.ReadyForMeasurementAsync(CancellationToken.None);
         Assert.True(ready.Ok);
         Assert.Contains("readyForMeasurement", ready.Data!.ToString()!, StringComparison.OrdinalIgnoreCase);

@@ -133,6 +133,8 @@ public sealed class SigmaStudioServerAdapter
                     return ProbeGetControlValue(payload);
                 case "property.probeSetControlValue":
                     return ProbeSetControlValue(payload);
+                case "block.setControl":
+                    return SetControlValue(payload);
                 case "catalog.discovery":
                     return CatalogDiscovery();
                 case "block.remove":
@@ -149,7 +151,6 @@ public sealed class SigmaStudioServerAdapter
                     return CreateCheckpoint();
                 case "block.add":
                 case "block.rename":
-                case "block.setControl":
                 case "block.setControls":
                     return AdapterResult.Failure("AUTOMATION_UNVERIFIED", $"The SigmaStudio 4.7 server API does not expose a verified mapping for '{method}'. No guessed object or property name was used.");
                 default:
@@ -385,35 +386,51 @@ public sealed class SigmaStudioServerAdapter
             return AdapterResult.Failure("MUTATION_HIL_PROJECT_NOT_OPEN", "The configured disposable HIL project is not the currently open SigmaStudio project.");
         _projectPath ??= openProjectPath;
 
-        var objectName = RequiredString(payload, "objectName");
+        return InvokeSetControlValue(payload, probeOnly: true);
+    }
+
+    private AdapterResult SetControlValue(JsonElement payload) => InvokeSetControlValue(payload, probeOnly: false);
+
+    private AdapterResult InvokeSetControlValue(JsonElement payload, bool probeOnly)
+    {
+        var objectName = payload.TryGetProperty("objectName", out var objectNameElement)
+            ? RequiredString(payload, "objectName")
+            : RequiredString(payload, "block");
         var algorithmIndex = payload.TryGetProperty("algorithmIndex", out var algorithm) && algorithm.TryGetInt32(out var algorithmValue) ? algorithmValue : 0;
         var repeatIndex = payload.TryGetProperty("repeatIndex", out var repeat) && repeat.TryGetInt32(out var repeatValue) ? repeatValue : 0;
-        var controlName = RequiredString(payload, "controlName");
+        var controlName = payload.TryGetProperty("controlName", out var controlNameElement)
+            ? RequiredString(payload, "controlName")
+            : RequiredString(payload, "control");
         if (!payload.TryGetProperty("value", out var jsonValue)) throw new ArgumentException("Parameter 'value' is required.");
 
         var value = JsonValueToClr(jsonValue);
         var method = _server!.GetType().GetMethods(BindingFlags.Instance | BindingFlags.Public)
             .FirstOrDefault(candidate => string.Equals(candidate.Name, "SET_OBJECT_PROPERTY", StringComparison.OrdinalIgnoreCase) && candidate.GetParameters().Length == 3);
-        if (method is null) return AdapterResult.Failure("SET_OBJECT_PROPERTY_UNAVAILABLE", "SET_OBJECT_PROPERTY with the documented three-parameter signature was not found.");
+        if (method is null) return AdapterResult.Failure("AUTOMATION_UNVERIFIED", "SET_OBJECT_PROPERTY with the documented three-parameter signature was not found.");
 
         var propertyArguments = PropertyInvocationBuilder.BuildSetControlValueArguments(objectName, algorithmIndex, repeatIndex, controlName, value);
         try
         {
             var returned = method.Invoke(_server, propertyArguments);
-            _runtimeRevision++;
-            return AdapterResult.Success(new
+            var returnBool = returned is bool boolValue ? boolValue : true;
+            if (returnBool) _runtimeRevision++;
+            var data = new
             {
                 serverMethod = FormatSignature(method),
                 objectName,
                 opcode = "setControlValue",
                 propertyParameters = new object?[] { algorithmIndex, repeatIndex, controlName, value },
                 inputClrType = value?.GetType().FullName,
-                returnBool = returned as bool? ?? true,
+                returnBool,
                 exception = (string?)null
-            });
+            };
+            if (!probeOnly && !returnBool)
+                return AdapterResult.Failure("SIGMASTUDIO_OPERATION_FAILED", "SigmaStudio returned false for 'SET_OBJECT_PROPERTY(setControlValue)'.");
+            return AdapterResult.Success(data);
         }
         catch (TargetInvocationException ex) when (ex.InnerException is not null)
         {
+            if (!probeOnly) return AdapterResult.Failure("SIGMASTUDIO_OPERATION_FAILED", ex.InnerException.Message);
             return AdapterResult.Success(new
             {
                 serverMethod = FormatSignature(method),
@@ -427,6 +444,7 @@ public sealed class SigmaStudioServerAdapter
         }
         catch (Exception ex)
         {
+            if (!probeOnly) return AdapterResult.Failure("SIGMASTUDIO_OPERATION_FAILED", ex.Message);
             return AdapterResult.Success(new
             {
                 serverMethod = FormatSignature(method),

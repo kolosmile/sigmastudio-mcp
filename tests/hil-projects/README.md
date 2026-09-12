@@ -13,9 +13,9 @@ accepts only the exact configured path, a filename ending in `.hil.dspproj`, or 
 project below this `tests/hil-projects` directory. Do not point the mutation gate at
 an ordinary user project.
 
-The first required fixture is a small ADAU1701 Input → scalar control block → Output
-design. A large production design may be used for graph/control observation, but it
-is not sufficient structural proof: SigmaStudio 4.7 server pin indices are not
+The control-write HIL selects a scalar control block and verifies the production
+write/readback/Capture/restore workflow. A large production design may be used for
+graph/control observation, but it is not sufficient structural proof: SigmaStudio 4.7 server pin indices are not
 guaranteed to equal the exported NetList `P<n>` numbers, and removing an internal
 edge can leave the design temporarily non-exportable. The test block and control
 are selected with:

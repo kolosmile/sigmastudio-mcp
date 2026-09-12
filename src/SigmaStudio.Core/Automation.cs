@@ -80,6 +80,7 @@ public sealed class InMemorySigmaStudioAutomation : ISigmaStudioAutomation
             "block.add" => AddBlock(command.Parameters),
             "block.remove" => RemoveBlock(command.Parameters),
             "block.rename" => RenameBlock(command.Parameters),
+            "block.getControls" => GetControls(command.Parameters),
             "block.setControl" => SetControl(command.Parameters),
             "block.setControls" => SetControls(command.Parameters),
             "connection.add" => AddConnection(command.Parameters),
@@ -257,6 +258,17 @@ public sealed class InMemorySigmaStudioAutomation : ISigmaStudioAutomation
         block = GetString(parameters, "block"),
         changes = new[] { new ControlChangeInput(GetString(parameters, "control"), GetJsonElement(parameters, "value")) }
     });
+
+    private AutomationResult GetControls(object? parameters)
+    {
+        var blockName = GetString(parameters, "block");
+        var block = _graph.Blocks.FirstOrDefault(candidate =>
+            string.Equals(candidate.ObjectName, blockName, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(candidate.FullObjectName, blockName, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(candidate.Id, blockName, StringComparison.OrdinalIgnoreCase));
+        if (block is null) return AutomationResult.Failure("BLOCK_NOT_FOUND", $"Block '{blockName}' was not found.");
+        return AutomationResult.Success(new { block = block.ObjectName, controls = block.Controls });
+    }
 
     private AutomationResult SetControls(object? parameters)
     {

@@ -241,10 +241,10 @@ public sealed class SigmaRuntime
         await ReadAsync("sigma_block_get_controls", ct, snapshot => (object?)FindBlock(snapshot.Graph, block)?.Controls ?? Array.Empty<ControlDto>());
 
     public Task<SigmaToolResult<object?>> BlockSetControlAsync(SetControlInput input, CancellationToken ct) =>
-        MutateAsync("sigma_block_set_control", "block.setControl", new { block = input.Block, control = input.Control, value = input.Value }, input.Block, input.Mutation, false, ct);
+        SetControlsVerifiedAsync(new SetControlsInput(input.Block, [new ControlChangeInput(input.Control, input.Value)], input.Mutation), "sigma_block_set_control", ct);
 
     public Task<SigmaToolResult<object?>> BlockSetControlsAsync(SetControlsInput input, CancellationToken ct) =>
-        MutateAsync("sigma_block_set_controls", "block.setControls", new { block = input.Block, changes = input.Changes }, input.Block, input.Mutation, false, ct);
+        SetControlsVerifiedAsync(input, "sigma_block_set_controls", ct);
 
     public Task<SigmaToolResult<object?>> ConnectionAddAsync(ConnectionInput input, CancellationToken ct) =>
         MutateAsync("sigma_connection_add", "connection.add", new ConnectionDto(new PinRefDto(input.SourceBlock, input.SourcePinIndex, input.SourcePinName), new PinRefDto(input.TargetBlock, input.TargetPinIndex, input.TargetPinName)), null, input.Mutation, true, ct);
@@ -255,6 +255,198 @@ public sealed class SigmaRuntime
     public Task<SigmaToolResult<object?>> LinkAsync(CancellationToken ct) => MutateAsync("sigma_link", "graph.link", null, null, null, false, ct);
     public Task<SigmaToolResult<object?>> CompileAsync(CancellationToken ct) => MutateAsync("sigma_compile", "graph.compile", null, null, null, false, ct);
     public Task<SigmaToolResult<object?>> DownloadAsync(CancellationToken ct) => MutateAsync("sigma_download", "graph.download", null, null, null, false, ct);
+
+    private async Task<SigmaToolResult<object?>> SetControlsVerifiedAsync(SetControlsInput input, string operation, CancellationToken ct)
+    {
+        if (input.Changes is null || input.Changes.Count == 0)
+            return Failure(operation, "INVALID_PARAMETERS", "At least one control change is required.");
+        if (string.IsNullOrWhiteSpace(input.Mutation.MutationId))
+            return Failure(operation, "INVALID_PARAMETERS", "A caller-owned mutationId is required.");
+        if (TryGetMutation(input.Mutation.MutationId, out var cached)) return cached;
+        if (!await _operationLock.WaitAsync(TimeSpan.FromSeconds(120), ct))
+            return Failure(operation, "BUSY", "Another SigmaStudio operation is in progress.");
+
+        try
+        {
+            var before = await _automation.GetSnapshotAsync(ct);
+            if (before.State.DesignRevision != input.Mutation.ExpectedDesignRevision)
+                return Failure(operation, "STALE_REVISION", $"Expected design revision {input.Mutation.ExpectedDesignRevision}, actual revision is {before.State.DesignRevision}.", snapshot: before);
+
+            var selectedBlock = FindBlock(before.Graph, input.Block);
+            if (selectedBlock is null)
+                return Failure(operation, "BLOCK_NOT_FOUND", $"Block '{input.Block}' was not found in the live graph.", snapshot: before);
+
+            // Refresh the exact block through GET_OBJECT_PROPERTY before taking the
+            // old-value snapshot. This keeps the write contract block-ID driven while
+            // ensuring the restore value is live rather than cached export metadata.
+            var refresh = await _automation.ExecuteAsync(new AutomationCommand("block.getControls", new { block = selectedBlock.ObjectName }), ct);
+            if (!refresh.Ok)
+                return Failure(operation, refresh.ErrorCode ?? "CONTROL_READBACK_UNAVAILABLE", refresh.ErrorMessage ?? "The selected block controls could not be read.", refresh.Details, before);
+            var current = await _automation.GetSnapshotAsync(ct);
+            selectedBlock = FindBlock(current.Graph, selectedBlock.Id) ?? selectedBlock;
+
+            var requested = new List<(string Name, JsonElement Value)>();
+            var original = new List<(string Name, JsonElement Value)>();
+            foreach (var change in input.Changes)
+            {
+                var control = FindControl(selectedBlock, change.Control);
+                if (control is null)
+                    return Failure(operation, "CONTROL_NOT_FOUND", $"Control '{change.Control}' was not found on block '{selectedBlock.ObjectName}'.", snapshot: current);
+                if (!ValidateControlValue(control, change.Value, out var validationError))
+                    return Failure(operation, validationError!.Code, validationError.Message, snapshot: current);
+                var oldValue = CurrentControlValue(control);
+                if (oldValue.ValueKind == JsonValueKind.Undefined)
+                    return Failure(operation, "CONTROL_READBACK_UNAVAILABLE", $"The current value for '{control.Name}' could not be read.", snapshot: current);
+                requested.Add((control.Name, change.Value.Clone()));
+                original.Add((control.Name, oldValue));
+            }
+
+            var beforeSequence = current.Capture.LastOrDefault()?.Sequence ?? 0;
+            var applied = new List<(string Name, JsonElement Value)>();
+            foreach (var change in requested)
+            {
+                var write = await _automation.ExecuteAsync(new AutomationCommand("block.setControl", new
+                {
+                    block = selectedBlock.ObjectName,
+                    control = change.Name,
+                    value = change.Value
+                }), ct);
+                if (!write.Ok)
+                    return await FailedControlVerificationAsync(operation, write.ErrorCode ?? "CONTROL_WRITE_FAILED", write.ErrorMessage ?? "SigmaStudio rejected the control write.", write.Details, selectedBlock.ObjectName, applied, original, current, ct);
+                applied.Add(change);
+            }
+
+            var readback = await _automation.ExecuteAsync(new AutomationCommand("block.getControls", new { block = selectedBlock.ObjectName }), ct);
+            if (!readback.Ok)
+                return await FailedControlVerificationAsync(operation, "CONTROL_READBACK_UNAVAILABLE", readback.ErrorMessage ?? "Control read-after-write failed.", readback.Details, selectedBlock.ObjectName, applied, original, current, ct);
+            var after = await _automation.GetSnapshotAsync(ct);
+            var afterBlock = FindBlock(after.Graph, selectedBlock.Id) ?? FindBlock(after.Graph, selectedBlock.ObjectName);
+            var observed = new List<object>();
+            var allMatch = true;
+            foreach (var change in requested)
+            {
+                var observedControl = afterBlock is null ? null : FindControl(afterBlock, change.Name);
+                var observedValue = observedControl is null ? default : CurrentControlValue(observedControl);
+                var match = observedControl is not null && JsonValuesEqual(change.Value, observedValue);
+                allMatch &= match;
+                observed.Add(new { control = change.Name, requestedValue = change.Value, observedValue, match });
+            }
+
+            var captureEntries = after.Capture.Where(entry => entry.Sequence > beforeSequence).ToArray();
+            var captureEvidence = new
+            {
+                available = captureEntries.Length > 0,
+                entries = CaptureResponseSerializer.Project(captureEntries, includeRaw: false)
+            };
+            if (!allMatch || captureEntries.Length == 0)
+            {
+                return await FailedControlVerificationAsync(
+                    operation,
+                    !allMatch ? "CONTROL_READBACK_MISMATCH" : "CAPTURE_EVIDENCE_UNAVAILABLE",
+                    !allMatch ? "SET_OBJECT_PROPERTY completed but the live readback did not match the requested value." : "SET_OBJECT_PROPERTY and readback succeeded, but no new Capture evidence was observed.",
+                    new Dictionary<string, object?> { ["observed"] = observed, ["captureEvidence"] = captureEvidence },
+                    selectedBlock.ObjectName,
+                    applied,
+                    original,
+                    after,
+                    ct);
+            }
+
+            var resultData = new
+            {
+                block = selectedBlock.ObjectName,
+                changes = observed,
+                verified = true,
+                captureEvidence
+            };
+            var resultEnvelope = Success(operation, after, resultData);
+            _mutations[input.Mutation.MutationId] = new CachedMutation(DateTimeOffset.UtcNow.Add(_mutationRetention), resultEnvelope);
+            return resultEnvelope;
+        }
+        finally
+        {
+            _operationLock.Release();
+        }
+    }
+
+    private async Task<SigmaToolResult<object?>> FailedControlVerificationAsync(
+        string operation,
+        string code,
+        string message,
+        IReadOnlyDictionary<string, object?>? details,
+        string block,
+        IReadOnlyList<(string Name, JsonElement Value)> applied,
+        IReadOnlyList<(string Name, JsonElement Value)> original,
+        AutomationSnapshot snapshot,
+        CancellationToken ct)
+    {
+        var rollbackAttempted = applied.Count > 0;
+        var rollbackSucceeded = true;
+        for (var index = applied.Count - 1; index >= 0; index--)
+        {
+            var old = original[index];
+            var restore = await _automation.ExecuteAsync(new AutomationCommand("block.setControl", new { block, control = old.Name, value = old.Value }), ct);
+            if (!restore.Ok) rollbackSucceeded = false;
+        }
+        if (rollbackAttempted)
+        {
+            var refresh = await _automation.ExecuteAsync(new AutomationCommand("block.getControls", new { block }), ct);
+            if (!refresh.Ok) rollbackSucceeded = false;
+            var restored = await _automation.GetSnapshotAsync(ct);
+            var restoredBlock = FindBlock(restored.Graph, block);
+            for (var index = 0; index < applied.Count && rollbackSucceeded; index++)
+            {
+                var actual = restoredBlock is null ? default : FindControl(restoredBlock, original[index].Name);
+                rollbackSucceeded = actual is not null && JsonValuesEqual(original[index].Value, CurrentControlValue(actual));
+            }
+            snapshot = restored;
+        }
+        var failure = Failure(operation, code, message, details, snapshot);
+        return failure with { RollbackAttempted = rollbackAttempted, RollbackSucceeded = rollbackSucceeded };
+    }
+
+    private static BlockDto? FindBlock(ProjectGraphDto graph, string block) => graph.Blocks.FirstOrDefault(candidate =>
+        string.Equals(candidate.Id, block, StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(candidate.ObjectName, block, StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(candidate.FullObjectName, block, StringComparison.OrdinalIgnoreCase));
+
+    private static ControlDto? FindControl(BlockDto block, string control) => block.Controls.FirstOrDefault(candidate =>
+        string.Equals(candidate.Name, control, StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(candidate.ControlId, control, StringComparison.OrdinalIgnoreCase));
+
+    private static JsonElement CurrentControlValue(ControlDto control)
+    {
+        if (control.TypedValue is JsonElement typed && typed.ValueKind != JsonValueKind.Undefined) return typed.Clone();
+        return control.Value is double numeric
+            ? ControlValueJson.Number(numeric)
+            : default;
+    }
+
+    private static bool ValidateControlValue(ControlDto control, JsonElement value, out OperationErrorDto? error)
+    {
+        if (ControlValueJson.TryGetNumber(value, out var number))
+        {
+            if (control.Min is not null && number < control.Min || control.Max is not null && number > control.Max)
+            {
+                error = new OperationErrorDto("CONTROL_VALUE_OUT_OF_RANGE", $"Value for '{control.Name}' is outside its documented range.");
+                return false;
+            }
+        }
+        if (control.Enum is { Count: > 0 } && value.ValueKind == JsonValueKind.String && !control.Enum.Contains(value.GetString() ?? "", StringComparer.OrdinalIgnoreCase))
+        {
+            error = new OperationErrorDto("CONTROL_VALUE_INVALID", $"Value for '{control.Name}' is not one of the documented enum values.");
+            return false;
+        }
+        error = null;
+        return true;
+    }
+
+    private static bool JsonValuesEqual(JsonElement left, JsonElement right)
+    {
+        if (left.ValueKind == JsonValueKind.Undefined || right.ValueKind == JsonValueKind.Undefined) return false;
+        if (ControlValueJson.TryGetNumber(left, out var leftNumber) && ControlValueJson.TryGetNumber(right, out var rightNumber)) return leftNumber == rightNumber;
+        return string.Equals(left.GetRawText(), right.GetRawText(), StringComparison.Ordinal);
+    }
 
     public async Task<SigmaToolResult<object?>> DeployAsync(CancellationToken ct)
     {
@@ -483,11 +675,6 @@ public sealed class SigmaRuntime
         public static TransactionTranslation Success(AutomationCommand command, bool structural) => new(true, command, structural, null, null);
         public static TransactionTranslation Failure(string code, string message) => new(false, null, false, code, message);
     }
-
-    private static BlockDto? FindBlock(ProjectGraphDto graph, string block) => graph.Blocks.FirstOrDefault(candidate =>
-        string.Equals(candidate.Id, block, StringComparison.OrdinalIgnoreCase) ||
-        string.Equals(candidate.ObjectName, block, StringComparison.OrdinalIgnoreCase) ||
-        string.Equals(candidate.FullObjectName, block, StringComparison.OrdinalIgnoreCase));
 
     private bool TryGetMutation(string id, out SigmaToolResult<object?> result)
     {

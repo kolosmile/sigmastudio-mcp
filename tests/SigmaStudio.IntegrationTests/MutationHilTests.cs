@@ -1,5 +1,8 @@
 using System.Text.Json;
+using SigmaStudio.Catalog;
+using SigmaStudio.Contracts;
 using SigmaStudio.Core;
+using SigmaStudio.Graph;
 
 namespace SigmaStudio.IntegrationTests;
 
@@ -25,67 +28,83 @@ public sealed class MutationHilTests
         using var requestedDocument = JsonDocument.Parse(requestedText!);
 
         var automation = new NamedPipeSigmaStudioAutomation(connectTimeout: TimeSpan.FromSeconds(5));
-        var refresh = await automation.ExecuteAsync(new AutomationCommand("graph.refreshLive"), CancellationToken.None);
-        Assert.True(refresh.Ok, refresh.ErrorMessage);
+        var runtime = CreateRuntime(automation);
 
-        var before = await ProbeGetAsync(automation, objectName, controlName);
-        var oldValue = ReturnedValue(before);
-        var beforeSnapshot = await automation.GetSnapshotAsync(CancellationToken.None);
-        var beforeSequence = beforeSnapshot.Capture.LastOrDefault()?.Sequence ?? 0;
+        var graph = await runtime.GraphGetAsync(new GraphGetInput("live"), CancellationToken.None);
+        Assert.True(graph.Ok, graph.Error?.Message);
+        var snapshot = await automation.GetSnapshotAsync(CancellationToken.None);
+        var block = snapshot.Graph.Blocks.FirstOrDefault(candidate =>
+            string.Equals(candidate.ObjectName, objectName, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(candidate.Id, objectName, StringComparison.OrdinalIgnoreCase));
+        Assert.NotNull(block);
+        var control = block!.Controls.FirstOrDefault(candidate =>
+            string.Equals(candidate.Name, controlName, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(candidate.ControlId, controlName, StringComparison.OrdinalIgnoreCase));
+        Assert.NotNull(control);
+        var oldValue = CurrentValue(control!);
+        Assert.NotEqual(JsonValueKind.Undefined, oldValue.ValueKind);
 
-        var set = await automation.ExecuteAsync(new AutomationCommand("property.probeSetControlValue", new
-        {
-            objectName,
-            algorithmIndex = 0,
-            repeatIndex = 0,
-            controlName,
-            value = requestedDocument.RootElement.Clone()
-        }), CancellationToken.None);
-        Assert.True(set.Ok, set.ErrorMessage);
+        var set = await runtime.BlockSetControlAsync(
+            new SetControlInput(objectName, controlName, requestedDocument.RootElement.Clone(),
+                new MutationInput(snapshot.State.DesignRevision, Guid.NewGuid().ToString("N"))),
+            CancellationToken.None);
+        Assert.True(set.Ok, set.Error?.Message);
         var setData = JsonSerializer.SerializeToElement(set.Data);
-        Assert.True(setData.GetProperty("returnBool").GetBoolean(), setData.GetProperty("exception").GetString());
-        Assert.Null(setData.GetProperty("exception").GetString());
+        Assert.True(setData.GetProperty("verified").GetBoolean());
+        Assert.True(setData.GetProperty("captureEvidence").GetProperty("available").GetBoolean());
 
-        var after = await ProbeGetAsync(automation, objectName, controlName);
-        Assert.True(JsonEquals(ReturnedValue(after), requestedDocument.RootElement), "SET read-after-write did not match the requested value.");
+        var after = await runtime.BlockGetAsync(objectName, refreshControls: true, CancellationToken.None);
+        Assert.True(after.Ok, after.Error?.Message);
+        var observed = FindControl(JsonSerializer.SerializeToElement(after.Data), controlName);
+        Assert.True(JsonEquals(observed, requestedDocument.RootElement), "Production SET read-after-write did not match the requested value.");
 
-        var afterSnapshot = await automation.GetSnapshotAsync(CancellationToken.None);
-        Assert.Contains(afterSnapshot.Capture, entry => entry.Sequence > beforeSequence);
+        var restoreSnapshot = await automation.GetSnapshotAsync(CancellationToken.None);
+        var restore = await runtime.BlockSetControlAsync(
+            new SetControlInput(objectName, controlName, oldValue,
+                new MutationInput(restoreSnapshot.State.DesignRevision, Guid.NewGuid().ToString("N"))),
+            CancellationToken.None);
+        Assert.True(restore.Ok, restore.Error?.Message);
 
-        var restore = await automation.ExecuteAsync(new AutomationCommand("property.probeSetControlValue", new
-        {
-            objectName,
-            algorithmIndex = 0,
-            repeatIndex = 0,
-            controlName,
-            value = oldValue
-        }), CancellationToken.None);
-        Assert.True(restore.Ok, restore.ErrorMessage);
-        var restored = await ProbeGetAsync(automation, objectName, controlName);
-        Assert.True(JsonEquals(ReturnedValue(restored), oldValue), "Original control value was not restored.");
+        var restored = await runtime.BlockGetAsync(objectName, refreshControls: true, CancellationToken.None);
+        Assert.True(restored.Ok, restored.Error?.Message);
+        var restoredValue = FindControl(JsonSerializer.SerializeToElement(restored.Data), controlName);
+        Assert.True(JsonEquals(restoredValue, oldValue), "Original control value was not restored.");
     }
 
-    private static async Task<AutomationResult> ProbeGetAsync(NamedPipeSigmaStudioAutomation automation, string objectName, string controlName)
+    private static SigmaRuntime CreateRuntime(NamedPipeSigmaStudioAutomation automation)
     {
-        var result = await automation.ExecuteAsync(new AutomationCommand("property.probeGetControlValue", new
-        {
-            objectName,
-            algorithmIndex = 0,
-            repeatIndex = 0,
-            controlName
-        }), CancellationToken.None);
-        Assert.True(result.Ok, result.ErrorMessage);
-        return result;
+        var options = new SigmaStudioOptions { AllowArbitraryPaths = true };
+        return new SigmaRuntime(automation, new ProjectPathPolicy(options), new GraphValidator(), () => new CatalogStore().Blocks, options);
     }
 
-    private static JsonElement ReturnedValue(AutomationResult result)
+    private static JsonElement CurrentValue(ControlDto control) =>
+        control.TypedValue is JsonElement typed && typed.ValueKind != JsonValueKind.Undefined
+            ? typed.Clone()
+            : control.Value is double numeric
+                ? ControlValueJson.Number(numeric)
+                : default;
+
+    private static JsonElement FindControl(JsonElement blockData, string controlName)
     {
-        var data = JsonSerializer.SerializeToElement(result.Data);
-        var values = data.GetProperty("returnedValues");
-        Assert.Equal(1, values.GetArrayLength());
-        return values[0].Clone();
+        var controls = blockData.ValueKind == JsonValueKind.Object && blockData.TryGetProperty("controls", out var blockControls)
+            ? blockControls
+            : blockData;
+        foreach (var control in controls.EnumerateArray())
+        {
+            if (string.Equals(control.GetProperty("name").GetString(), controlName, StringComparison.OrdinalIgnoreCase) ||
+                control.TryGetProperty("controlId", out var id) && string.Equals(id.GetString(), controlName, StringComparison.OrdinalIgnoreCase))
+            {
+                if (control.TryGetProperty("typedValue", out var typed) && typed.ValueKind != JsonValueKind.Null && typed.ValueKind != JsonValueKind.Undefined) return typed.Clone();
+                if (control.TryGetProperty("value", out var value) && value.ValueKind != JsonValueKind.Null && value.ValueKind != JsonValueKind.Undefined) return value.Clone();
+            }
+        }
+        return default;
     }
 
-    private static bool JsonEquals(JsonElement left, JsonElement right) =>
-        string.Equals(left.GetRawText(), right.GetRawText(), StringComparison.Ordinal);
+    private static bool JsonEquals(JsonElement left, JsonElement right)
+    {
+        if (left.ValueKind == JsonValueKind.Number && right.ValueKind == JsonValueKind.Number)
+            return left.GetDouble() == right.GetDouble();
+        return string.Equals(left.GetRawText(), right.GetRawText(), StringComparison.Ordinal);
+    }
 }

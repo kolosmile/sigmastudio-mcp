@@ -87,10 +87,10 @@ public sealed class SigmaTools
     [McpServerTool(Name = "sigma_block_get_controls", ReadOnly = true, Idempotent = true, UseStructuredContent = true), Description("Return controls for a graph block.")]
     public Task<SigmaToolResult<object?>> BlockGetControls(string block, CancellationToken cancellationToken) => _runtime.BlockGetControlsAsync(block, cancellationToken);
 
-    [McpServerTool(Name = "sigma_block_set_control", UseStructuredContent = true), Description("Set one typed SigmaStudio control only through a verified property contract. Call sigma_graph_get first, select a stable blockId, call sigma_block_get with refreshControls=true, and never invent a control name.")]
+    [McpServerTool(Name = "sigma_block_set_control", UseStructuredContent = true), Description("Set one typed SigmaStudio control through the verified SET_OBJECT_PROPERTY contract. Call sigma_graph_get first, select a stable blockId, call sigma_block_get with refreshControls=true, and never invent a control name. Success requires live readback and new Capture evidence; failures attempt restoration.")]
     public Task<SigmaToolResult<object?>> BlockSetControl(SetControlInput input, CancellationToken cancellationToken) => _runtime.BlockSetControlAsync(input, cancellationToken);
 
-    [McpServerTool(Name = "sigma_block_set_controls", UseStructuredContent = true), Description("Apply typed control changes under one operation lock; the backend must have a verified property contract and read-after-write policy.")]
+    [McpServerTool(Name = "sigma_block_set_controls", UseStructuredContent = true), Description("Apply typed control changes sequentially under one operation lock through the verified property contract. Success requires live readback and new Capture evidence; failures attempt restoration.")]
     public Task<SigmaToolResult<object?>> BlockSetControls(SetControlsInput input, CancellationToken cancellationToken) => _runtime.BlockSetControlsAsync(input, cancellationToken);
 
     [McpServerTool(Name = "sigma_connection_add", UseStructuredContent = true), Description("Create a semantic graph connection using explicit source and target pins.")]
