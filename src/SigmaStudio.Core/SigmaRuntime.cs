@@ -301,7 +301,6 @@ public sealed class SigmaRuntime
                 original.Add((control.Name, oldValue));
             }
 
-            var beforeSequence = current.Capture.LastOrDefault()?.Sequence ?? 0;
             var applied = new List<(string Name, JsonElement Value)>();
             foreach (var change in requested)
             {
@@ -332,19 +331,13 @@ public sealed class SigmaRuntime
                 observed.Add(new { control = change.Name, requestedValue = change.Value, observedValue, match });
             }
 
-            var captureEntries = after.Capture.Where(entry => entry.Sequence > beforeSequence).ToArray();
-            var captureEvidence = new
-            {
-                available = captureEntries.Length > 0,
-                entries = CaptureResponseSerializer.Project(captureEntries, includeRaw: false)
-            };
-            if (!allMatch || captureEntries.Length == 0)
+            if (!allMatch)
             {
                 return await FailedControlVerificationAsync(
                     operation,
-                    !allMatch ? "CONTROL_READBACK_MISMATCH" : "CAPTURE_EVIDENCE_UNAVAILABLE",
-                    !allMatch ? "SET_OBJECT_PROPERTY completed but the live readback did not match the requested value." : "SET_OBJECT_PROPERTY and readback succeeded, but no new Capture evidence was observed.",
-                    new Dictionary<string, object?> { ["observed"] = observed, ["captureEvidence"] = captureEvidence },
+                    "CONTROL_READBACK_MISMATCH",
+                    "SET_OBJECT_PROPERTY completed but the live readback did not match the requested value.",
+                    new Dictionary<string, object?> { ["observed"] = observed },
                     selectedBlock.ObjectName,
                     applied,
                     original,
@@ -357,7 +350,7 @@ public sealed class SigmaRuntime
                 block = selectedBlock.ObjectName,
                 changes = observed,
                 verified = true,
-                captureEvidence
+                verification = "live-readback"
             };
             var resultEnvelope = Success(operation, after, resultData);
             _mutations[input.Mutation.MutationId] = new CachedMutation(DateTimeOffset.UtcNow.Add(_mutationRetention), resultEnvelope);
@@ -457,40 +450,14 @@ public sealed class SigmaRuntime
         return await DownloadAsync(ct);
     }
 
-    public async Task<SigmaToolResult<object?>> CaptureGetAsync(CaptureGetInput input, CancellationToken ct)
-    {
-        return await ReadAsync("sigma_capture_get", ct, snapshot => new
-        {
-            entries = CaptureResponseSerializer.Project(snapshot.Capture
-                .Where(e => input.AfterSequence is null || e.Sequence > input.AfterSequence.Value)
-                .Take(Math.Clamp(input.Limit, 1, 1000)).ToArray(), input.IncludeRaw),
-            warning = snapshot.CaptureWarning,
-            serialization = CaptureResponseSerializer.Metadata(input.IncludeRaw)
-        });
-    }
+    public Task<SigmaToolResult<object?>> CaptureGetAsync(CaptureGetInput input, CancellationToken ct) =>
+        Task.FromResult(Failure("sigma_capture_get", "CAPTURE_UNAVAILABLE", "Capture is currently disabled and is not part of the active MCP workflow."));
 
-    public async Task<SigmaToolResult<object?>> CaptureCursorAsync(CancellationToken ct)
-    {
-        return await ReadAsync("sigma_capture_cursor", ct, snapshot => new CaptureCursorDto((snapshot.Capture.LastOrDefault()?.Sequence ?? 0) + 1));
-    }
+    public Task<SigmaToolResult<object?>> CaptureCursorAsync(CancellationToken ct) =>
+        Task.FromResult(Failure("sigma_capture_cursor", "CAPTURE_UNAVAILABLE", "Capture is currently disabled and is not part of the active MCP workflow."));
 
-    public async Task<SigmaToolResult<object?>> CaptureWaitAsync(long afterSequence, int timeoutMs, bool includeRaw, CancellationToken ct)
-    {
-        var deadline = DateTimeOffset.UtcNow.AddMilliseconds(Math.Clamp(timeoutMs, 1, _options.CaptureWaitMaxSeconds * 1000));
-        while (DateTimeOffset.UtcNow < deadline)
-        {
-            var snapshot = await _automation.GetSnapshotAsync(ct);
-            var entries = snapshot.Capture.Where(e => e.Sequence > afterSequence).ToArray();
-            if (entries.Length > 0)
-                return Success("sigma_capture_wait", snapshot, new
-                {
-                    entries = CaptureResponseSerializer.Project(entries, includeRaw),
-                    serialization = CaptureResponseSerializer.Metadata(includeRaw)
-                });
-            await Task.Delay(100, ct);
-        }
-        return Failure("sigma_capture_wait", "TIMEOUT", "No new Capture Window entry arrived before the timeout.");
-    }
+    public Task<SigmaToolResult<object?>> CaptureWaitAsync(long afterSequence, int timeoutMs, bool includeRaw, CancellationToken ct) =>
+        Task.FromResult(Failure("sigma_capture_wait", "CAPTURE_UNAVAILABLE", "Capture is currently disabled and is not part of the active MCP workflow."));
 
     public bool RawParameterAccessEnabled => _options.EnableRawParameterAccess;
     public bool RawRegisterAccessEnabled => _options.EnableRawRegisterAccess;

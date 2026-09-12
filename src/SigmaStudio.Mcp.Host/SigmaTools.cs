@@ -87,10 +87,10 @@ public sealed class SigmaTools
     [McpServerTool(Name = "sigma_block_get_controls", ReadOnly = true, Idempotent = true, UseStructuredContent = true), Description("Return controls for a graph block.")]
     public Task<SigmaToolResult<object?>> BlockGetControls(string block, CancellationToken cancellationToken) => _runtime.BlockGetControlsAsync(block, cancellationToken);
 
-    [McpServerTool(Name = "sigma_block_set_control", UseStructuredContent = true), Description("Set one typed SigmaStudio control through the verified SET_OBJECT_PROPERTY contract. Call sigma_graph_get first, select a stable blockId, call sigma_block_get with refreshControls=true, and never invent a control name. Success requires live readback and new Capture evidence; failures attempt restoration.")]
+    [McpServerTool(Name = "sigma_block_set_control", UseStructuredContent = true), Description("Set one typed SigmaStudio control through the verified SET_OBJECT_PROPERTY contract. Call sigma_graph_get first, select a stable blockId, call sigma_block_get with refreshControls=true, and never invent a control name. Success requires live readback; failures attempt restoration.")]
     public Task<SigmaToolResult<object?>> BlockSetControl(SetControlInput input, CancellationToken cancellationToken) => _runtime.BlockSetControlAsync(input, cancellationToken);
 
-    [McpServerTool(Name = "sigma_block_set_controls", UseStructuredContent = true), Description("Apply typed control changes sequentially under one operation lock through the verified property contract. Success requires live readback and new Capture evidence; failures attempt restoration.")]
+    [McpServerTool(Name = "sigma_block_set_controls", UseStructuredContent = true), Description("Apply typed control changes sequentially under one operation lock through the verified property contract. Success requires live readback; failures attempt restoration.")]
     public Task<SigmaToolResult<object?>> BlockSetControls(SetControlsInput input, CancellationToken cancellationToken) => _runtime.BlockSetControlsAsync(input, cancellationToken);
 
     [McpServerTool(Name = "sigma_connection_add", UseStructuredContent = true), Description("Create a semantic graph connection using explicit source and target pins.")]
@@ -111,12 +111,12 @@ public sealed class SigmaTools
     [McpServerTool(Name = "sigma_deploy", UseStructuredContent = true), Description("Run link, compile and download as one serialized deployment operation.")]
     public Task<SigmaToolResult<object?>> Deploy(CancellationToken cancellationToken) => _runtime.DeployAsync(cancellationToken);
 
-    [McpServerTool(Name = "sigma_capture_get", ReadOnly = true, Idempotent = true, UseStructuredContent = true), Description("Read compact structured Capture Window entries after an optional sequence cursor. Raw clipboard fields are omitted unless includeRaw=true.")]
+    [McpServerTool(Name = "sigma_capture_get", ReadOnly = true, Idempotent = true, UseStructuredContent = true), Description("Capture integration is currently disabled; the tool remains reserved for a future optional evidence workflow.")]
     public Task<SigmaToolResult<object?>> CaptureGet(CaptureGetInput input, CancellationToken cancellationToken) => _runtime.CaptureGetAsync(input, cancellationToken);
 
-    [McpServerTool(Name = "sigma_capture_cursor", ReadOnly = true, Idempotent = true, UseStructuredContent = true), Description("Return the next Capture Window sequence cursor.")]
+    [McpServerTool(Name = "sigma_capture_cursor", ReadOnly = true, Idempotent = true, UseStructuredContent = true), Description("Capture integration is currently disabled; the tool remains reserved for a future optional evidence workflow.")]
     public Task<SigmaToolResult<object?>> CaptureCursor(CancellationToken cancellationToken) => _runtime.CaptureCursorAsync(cancellationToken);
 
-    [McpServerTool(Name = "sigma_capture_wait", ReadOnly = true, UseStructuredContent = true), Description("Wait for a new compact structured Capture Window entry. Raw clipboard fields are omitted unless includeRaw=true.")]
+    [McpServerTool(Name = "sigma_capture_wait", ReadOnly = true, UseStructuredContent = true), Description("Capture integration is currently disabled; the tool remains reserved for a future optional evidence workflow.")]
     public Task<SigmaToolResult<object?>> CaptureWait(long afterSequence, int timeoutMs = 30000, bool includeRaw = false, CancellationToken cancellationToken = default) => _runtime.CaptureWaitAsync(afterSequence, timeoutMs, includeRaw, cancellationToken);
 }

@@ -10,7 +10,7 @@ public sealed class MutationHilTests
 {
     [Fact]
     [Trait("Category", "HIL")]
-    public async Task Disposable_control_write_is_read_back_captured_and_restored()
+    public async Task Disposable_control_write_is_read_back_and_restored()
     {
         if (!string.Equals(Environment.GetEnvironmentVariable("SIGMASTUDIO_MCP_HIL_MUTATION"), "1", StringComparison.Ordinal)) return;
 
@@ -51,7 +51,7 @@ public sealed class MutationHilTests
         Assert.True(set.Ok, set.Error?.Message);
         var setData = JsonSerializer.SerializeToElement(set.Data);
         Assert.True(setData.GetProperty("verified").GetBoolean());
-        Assert.True(setData.GetProperty("captureEvidence").GetProperty("available").GetBoolean());
+        Assert.Equal("live-readback", setData.GetProperty("verification").GetString());
 
         var after = await runtime.BlockGetAsync(objectName, refreshControls: true, CancellationToken.None);
         Assert.True(after.Ok, after.Error?.Message);

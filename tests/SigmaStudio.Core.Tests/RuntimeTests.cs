@@ -32,7 +32,7 @@ public sealed class RuntimeTests
         Assert.True(control.Ok, control.Error?.Message);
         var controlData = JsonSerializer.SerializeToElement(control.Data);
         Assert.True(controlData.GetProperty("verified").GetBoolean());
-        Assert.True(controlData.GetProperty("captureEvidence").GetProperty("available").GetBoolean());
+        Assert.Equal("live-readback", controlData.GetProperty("verification").GetString());
         var ready = await runtime.ReadyForMeasurementAsync(CancellationToken.None);
         Assert.True(ready.Ok);
         Assert.Contains("readyForMeasurement", ready.Data!.ToString()!, StringComparison.OrdinalIgnoreCase);

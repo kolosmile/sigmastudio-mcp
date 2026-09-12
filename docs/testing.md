@@ -36,14 +36,14 @@ The non-HIL suite also covers deterministic export IDs, graph fingerprints, revi
 
 ## Disposable control-write HIL
 
-The opt-in mutation gate exercises the production `sigma_block_set_control` path end to end: it reads the original `Gain1.Gain`, writes `0.25` through `SET_OBJECT_PROPERTY`, verifies the live readback, observes a new Capture entry, and restores the original value. The runtime only reports success after the readback and Capture checks pass; a failed verification attempts an explicit restore. The project must already be open in SigmaStudio and the test does not save it.
+The opt-in mutation gate exercises the production `sigma_block_set_control` path end to end: it reads the original `Gain1.Gain`, writes `0.25` through `SET_OBJECT_PROPERTY`, verifies the live readback, and restores the original value. Capture is currently disabled and is not part of the success condition; a failed verification attempts an explicit restore. The project must already be open in SigmaStudio and the test does not save it.
 
 ```powershell
 $env:SIGMASTUDIO_MCP_HIL = "1"
 $env:SIGMASTUDIO_MCP_HIL_MUTATION = "1"
 $env:SIGMASTUDIO_MCP_HIL_PROJECT = "C:\path\to\control-write-test.hil.dspproj"
 $env:SIGMASTUDIO_MCP_HIL_NEW_VALUE = "0.25"
-dotnet test tests/SigmaStudio.IntegrationTests/SigmaStudio.IntegrationTests.csproj -c Release --filter "FullyQualifiedName~MutationHilTests.Disposable_control_write_is_read_back_captured_and_restored"
+dotnet test tests/SigmaStudio.IntegrationTests/SigmaStudio.IntegrationTests.csproj -c Release --filter "FullyQualifiedName~MutationHilTests.Disposable_control_write_is_read_back_and_restored"
 ```
 
 The adapter converts exported graph pin indices (`P1`, `P2`, ...) to the documented zero-based `CONNECT_OBJECT`/`DISCONNECT_OBJECT` server arguments. This mapping was verified on a disposable ADAU1701 stereo Input → Output fixture. Structural acceptance still requires a valid intermediate graph: on ADAU1701, disconnecting a mandatory output edge makes `COMPILE`/`EXPORT_SYSTEM_FILES` fail, so that case is not reported as a successful live structural mutation. The large two-IC design remains suitable for graph/control observation, but is not accepted as structural proof.
@@ -52,11 +52,11 @@ Structural tests are separately gated with `SIGMASTUDIO_MCP_HIL_STRUCTURAL=1`, s
 
 ## Capture clipboard HIL
 
-The opt-in Capture test verifies the local 4.7 owner-drawn grid route. It selects the visible range, right-clicks in the text area, waits for the context menu, invokes `Down` + `Enter`, parses the clipboard into structured entries, and requires a non-empty selected-range result.
+The Capture implementation is retained but currently disabled. The opt-in test verifies that the bridge reports `CAPTURE_UNAVAILABLE` rather than attempting UI/clipboard automation.
 
-MCP Capture responses use compact structured JSON by default. Large `rawText` and `rawColumns` fields are omitted and represented by length/SHA-256 metadata; pass `includeRaw=true` to `sigma_capture_get` or `sigma_capture_wait` only when the raw fields are explicitly needed.
+The Capture response serializer is retained for later re-enablement, but Capture tool calls currently return `CAPTURE_UNAVAILABLE`.
 
 ```powershell
 $env:SIGMASTUDIO_MCP_HIL_CAPTURE = "1"
-dotnet test tests/SigmaStudio.IntegrationTests/SigmaStudio.IntegrationTests.csproj -c Release --filter "FullyQualifiedName~CaptureHilTests.Selected_capture_row_copy_is_structured_and_non_empty"
+dotnet test tests/SigmaStudio.IntegrationTests/SigmaStudio.IntegrationTests.csproj -c Release --filter "FullyQualifiedName~CaptureHilTests.Capture_is_explicitly_unavailable_until_reenabled"
 ```

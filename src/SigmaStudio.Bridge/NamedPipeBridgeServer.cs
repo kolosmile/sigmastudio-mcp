@@ -85,11 +85,11 @@ public sealed class NamedPipeBridgeServer
                     "bridge.probe" => Success(request.Id, _adapter.Probe()),
                     "bridge.get_snapshot" => Success(request.Id, MergeUiState(_adapter.GetSnapshot() with
                     {
-                        Capture = _observer.ReadCaptureEntries(),
-                        CaptureWarning = _observer.CaptureWarning
+                        Capture = Array.Empty<CaptureEntryDto>(),
+                        CaptureWarning = "CAPTURE_UNAVAILABLE"
                     }, _observer.ReadStatusObservation())),
                     "bridge.ui_status" => Success(request.Id, _observer.ReadStatus()),
-                    "bridge.capture_get" => Success(request.Id, _observer.ReadCapture()),
+                    "bridge.capture_get" => Failure(request.Id, "CAPTURE_UNAVAILABLE", "Capture is currently disabled and is not part of the active MCP workflow."),
                     _ => DispatchAdapter(request)
                 };
             }
@@ -137,6 +137,7 @@ public sealed class NamedPipeBridgeServer
     }
 
     private static BridgeResponse Success(string id, object? result) => new(id, true, JsonSerializer.SerializeToElement(result, JsonOptions));
+    private static BridgeResponse Failure(string id, string code, string message) => new(id, false, null, new BridgeError(code, message));
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 }
 

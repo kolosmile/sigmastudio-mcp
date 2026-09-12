@@ -9,11 +9,11 @@ The MCP is an introspection and mutation control plane. An agent should keep the
 5. Apply one explicit, revision-guarded mutation, or use `sigma_graph_transaction` for a structural batch.
 6. Read the graph or block again and check IDs, values, warnings, and `graphFingerprint`.
 7. Run `sigma_graph_validate`; deploy only after the graph is structurally valid.
-8. Use `sigma_capture_get` only for communication evidence. Capture is not the source of structural graph truth.
+8. A Capture jelenleg nem része a workflow-nak; csak későbbi opcionális bizonyítékként marad fenn.
 
 ## Freshness and evidence
 
-The export is the structural source of truth. A live graph is produced from `EXPORT_SYSTEM_FILES`, `*_NetList.xml`, and the schematic XML. Current control values are marked with their source; the Bridge does not claim a property readback when `GET_OBJECT_PROPERTY` did not return a value. UI status comes from the SigmaStudio status bar. Capture entries come from the accessibility tree when rows are exposed, or from the verified selected-range clipboard route for the owner-drawn 4.7 grid; Capture remains communication evidence, not structural graph truth. MCP Capture responses are compact structured JSON by default; raw clipboard fields require an explicit `includeRaw=true` request.
+The export is the structural source of truth. A live graph is produced from `EXPORT_SYSTEM_FILES`, `*_NetList.xml`, and the schematic XML. Current control values are marked with their source; the Bridge does not claim a property readback when `GET_OBJECT_PROPERTY` did not return a value. UI status comes from the SigmaStudio status bar. Capture observation remains implemented for a future optional evidence workflow, but is currently disabled and not used by snapshots or mutations.
 
 If a response contains `CONTROL_READBACK_UNAVAILABLE`, `GRAPH_EXTRACTION_FAILED`, `ROLLBACK_FAILED`, or `projectStateUncertain`, stop and report that evidence instead of treating the operation as successful.
 

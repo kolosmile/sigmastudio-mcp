@@ -18,6 +18,8 @@ public sealed class UiAutomationObserver
     private string? _captureCopyDiagnostic;
     private int _captureCopyAttempt;
     private long _captureSequence;
+    private DateTimeOffset _lastCaptureReadAt = DateTimeOffset.MinValue;
+    private static readonly TimeSpan SnapshotCaptureCacheTtl = TimeSpan.FromMilliseconds(500);
 
     public bool IsAvailable => Environment.OSVersion.Platform == PlatformID.Win32NT;
     public string? CaptureWarning
@@ -51,7 +53,7 @@ public sealed class UiAutomationObserver
     public object ReadCapture()
     {
         if (!IsAvailable) return new { available = false, entries = Array.Empty<CaptureEntryDto>(), reason = "Capture selector profile is unavailable outside Windows." };
-        var entries = ReadCaptureEntries();
+        var entries = ReadCaptureEntries(forceRefresh: true);
         return new
         {
             available = FindCaptureWindow() is not null,
@@ -62,13 +64,28 @@ public sealed class UiAutomationObserver
         };
     }
 
-    public IReadOnlyList<CaptureEntryDto> ReadCaptureEntries()
+    public void InvalidateCaptureCache()
+    {
+        lock (_captureGate) _lastCaptureReadAt = DateTimeOffset.MinValue;
+    }
+
+    public IReadOnlyList<CaptureEntryDto> ReadCaptureEntries(bool forceRefresh = false)
     {
         if (!IsAvailable) return Array.Empty<CaptureEntryDto>();
+        lock (_captureGate)
+        {
+            if (!forceRefresh && DateTimeOffset.UtcNow - _lastCaptureReadAt < SnapshotCaptureCacheTtl)
+                return _capture.ToArray();
+        }
+
         var captureWindow = FindCaptureWindow();
         if (captureWindow is null)
         {
-            lock (_captureGate) return _capture.ToArray();
+            lock (_captureGate)
+            {
+                _lastCaptureReadAt = DateTimeOffset.UtcNow;
+                return _capture.ToArray();
+            }
         }
 
         var rows = ReadUiAutomationRows(captureWindow);
@@ -82,7 +99,11 @@ public sealed class UiAutomationObserver
             else
             {
                 _captureWarning = warning;
-                lock (_captureGate) return _capture.ToArray();
+                lock (_captureGate)
+                {
+                    _lastCaptureReadAt = DateTimeOffset.UtcNow;
+                    return _capture.ToArray();
+                }
             }
         }
         else
@@ -176,6 +197,7 @@ public sealed class UiAutomationObserver
                 _capture.Add(new CaptureEntryDto(++_captureSequence, DateTimeOffset.UtcNow, row.Direction, "CAPTURE", row.Summary, row.Block, row.Control, row.Payload));
             }
             if (_capture.Count > 2000) _capture.RemoveRange(0, _capture.Count - 2000);
+            _lastCaptureReadAt = DateTimeOffset.UtcNow;
             return _capture.ToArray();
         }
     }
