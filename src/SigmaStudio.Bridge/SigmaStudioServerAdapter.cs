@@ -1,6 +1,7 @@
 using System.Reflection;
 using System.IO;
 using System.Text.Json;
+using System.Windows.Automation;
 using SigmaStudio.Contracts;
 using SigmaStudio.Graph;
 
@@ -379,8 +380,10 @@ public sealed class SigmaStudioServerAdapter
             return AdapterResult.Failure("MUTATION_HIL_PROJECT_REQUIRED", "The SET property probe requires SIGMASTUDIO_MCP_HIL_PROJECT to identify a disposable project.");
         if (!IsAllowedMutationProject(configuredProject))
             return AdapterResult.Failure("MUTATION_HIL_PROJECT_INVALID", "The mutation project must end in '.hil.dspproj' or be under a dedicated tests/hil-projects directory.");
-        if (string.IsNullOrWhiteSpace(_projectPath) || !PathsEqual(_projectPath!, configuredProject))
+        var openProjectPath = _projectPath ?? DiscoverOpenProjectPath();
+        if (string.IsNullOrWhiteSpace(openProjectPath) || !PathsEqual(openProjectPath!, configuredProject))
             return AdapterResult.Failure("MUTATION_HIL_PROJECT_NOT_OPEN", "The configured disposable HIL project is not the currently open SigmaStudio project.");
+        _projectPath ??= openProjectPath;
 
         var objectName = RequiredString(payload, "objectName");
         var algorithmIndex = payload.TryGetProperty("algorithmIndex", out var algorithm) && algorithm.TryGetInt32(out var algorithmValue) ? algorithmValue : 0;
@@ -465,6 +468,50 @@ public sealed class SigmaStudioServerAdapter
 
     private static bool PathsEqual(string left, string right) =>
         string.Equals(Path.GetFullPath(left), Path.GetFullPath(right), StringComparison.OrdinalIgnoreCase);
+
+    private static string? DiscoverOpenProjectPath()
+    {
+        try
+        {
+            var windows = AutomationElement.RootElement.FindAll(
+                TreeScope.Children,
+                new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Window));
+            var sigma = windows.Cast<AutomationElement>()
+                .Where(element => (element.Current.Name ?? string.Empty).IndexOf("SigmaStudio", StringComparison.OrdinalIgnoreCase) >= 0)
+                .FirstOrDefault(IsSigmaStudioProcess);
+            if (sigma is null) return null;
+
+            return sigma.FindAll(
+                    TreeScope.Descendants,
+                    new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Window))
+                .Cast<AutomationElement>()
+                .Select(element => element.Current.AutomationId)
+                .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value) &&
+                                         Path.IsPathRooted(value) &&
+                                         value.EndsWith(".dspproj", StringComparison.OrdinalIgnoreCase));
+        }
+        catch (ElementNotAvailableException)
+        {
+            return null;
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
+    }
+
+    private static bool IsSigmaStudioProcess(AutomationElement element)
+    {
+        try
+        {
+            using var process = System.Diagnostics.Process.GetProcessById(element.Current.ProcessId);
+            return string.Equals(process.ProcessName, "SStudio", StringComparison.OrdinalIgnoreCase);
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+    }
 
     private static bool IsAllowedMutationProject(string path)
     {

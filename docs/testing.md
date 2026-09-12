@@ -33,3 +33,12 @@ dotnet test tests/SigmaStudio.IntegrationTests/SigmaStudio.IntegrationTests.cspr
 The live parser uses `EXPORT_SYSTEM_FILES`, `*_NetList.xml` for topology, and the schematic XML for module controls and parameters. If export parsing fails, the Bridge returns `GRAPH_EXTRACTION_FAILED` and does not fabricate a graph.
 
 The non-HIL suite also covers deterministic export IDs, graph fingerprints, revision-guarded mutations, transaction diff/rollback, and the accessibility-based Capture observer. The installed Toolbox catalog is intentionally reported as unavailable unless a runtime enumeration is verified.
+
+## Capture clipboard HIL
+
+The opt-in Capture test verifies the local 4.7 owner-drawn grid route. It selects the visible range, right-clicks in the text area, waits for the context menu, invokes `Down` + `Enter`, parses the clipboard into structured entries, and requires a non-empty selected-range result.
+
+```powershell
+$env:SIGMASTUDIO_MCP_HIL_CAPTURE = "1"
+dotnet test tests/SigmaStudio.IntegrationTests/SigmaStudio.IntegrationTests.csproj -c Release --filter "FullyQualifiedName~CaptureHilTests.Selected_capture_row_copy_is_structured_and_non_empty"
+```
