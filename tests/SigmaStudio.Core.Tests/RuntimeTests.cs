@@ -29,7 +29,7 @@ public sealed class RuntimeTests
         Assert.True(before.Data is not null);
         var control = await runtime.BlockSetControlAsync(new SetControlInput("Gain1", "Gain", 3, new MutationInput(before.DesignRevision, Guid.NewGuid().ToString("N"))), CancellationToken.None);
 
-        Assert.True(control.Ok);
+        Assert.True(control.Ok, control.Error?.Message);
         var ready = await runtime.ReadyForMeasurementAsync(CancellationToken.None);
         Assert.True(ready.Ok);
         Assert.Contains("readyForMeasurement", ready.Data!.ToString()!, StringComparison.OrdinalIgnoreCase);

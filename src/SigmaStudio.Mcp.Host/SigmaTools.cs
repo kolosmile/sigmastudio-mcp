@@ -66,6 +66,9 @@ public sealed class SigmaTools
     [McpServerTool(Name = "sigma_catalog_discovery", ReadOnly = true, Idempotent = true, UseStructuredContent = true), Description("Report whether the installed SigmaStudio runtime exposes a verified Toolbox catalog and which automation methods were observed.")]
     public Task<SigmaToolResult<object?>> CatalogDiscovery(CancellationToken cancellationToken) => _runtime.CatalogDiscoveryAsync(cancellationToken);
 
+    [McpServerTool(Name = "sigma_property_probe_get_control_value", ReadOnly = true, Idempotent = true, UseStructuredContent = true), Description("Read-only developer probe for the verified SigmaStudio getControlValue property contract. Provide the exact exported object name, algorithm index, repeat index and control parameter name.")]
+    public Task<SigmaToolResult<object?>> PropertyProbeGetControlValue(PropertyProbeGetControlValueInput input, CancellationToken cancellationToken) => _runtime.PropertyProbeGetControlValueAsync(input, cancellationToken);
+
     [McpServerTool(Name = "sigma_block_get", ReadOnly = true, Idempotent = true, UseStructuredContent = true), Description("Read one block by stable blockId (or legacy objectName), including current control metadata; refreshControls forces a fresh live export.")]
     public Task<SigmaToolResult<object?>> BlockGet(string block, bool refreshControls = false, CancellationToken cancellationToken = default) => _runtime.BlockGetAsync(block, refreshControls, cancellationToken);
 
@@ -81,10 +84,10 @@ public sealed class SigmaTools
     [McpServerTool(Name = "sigma_block_get_controls", ReadOnly = true, Idempotent = true, UseStructuredContent = true), Description("Return controls for a graph block.")]
     public Task<SigmaToolResult<object?>> BlockGetControls(string block, CancellationToken cancellationToken) => _runtime.BlockGetControlsAsync(block, cancellationToken);
 
-    [McpServerTool(Name = "sigma_block_set_control", UseStructuredContent = true), Description("Set one high-level SigmaStudio control with range validation and capture recording.")]
+    [McpServerTool(Name = "sigma_block_set_control", UseStructuredContent = true), Description("Set one typed SigmaStudio control only through a verified property contract. Call sigma_graph_get first, select a stable blockId, call sigma_block_get with refreshControls=true, and never invent a control name.")]
     public Task<SigmaToolResult<object?>> BlockSetControl(SetControlInput input, CancellationToken cancellationToken) => _runtime.BlockSetControlAsync(input, cancellationToken);
 
-    [McpServerTool(Name = "sigma_block_set_controls", UseStructuredContent = true), Description("Apply a batch of control changes under one operation lock.")]
+    [McpServerTool(Name = "sigma_block_set_controls", UseStructuredContent = true), Description("Apply typed control changes under one operation lock; the backend must have a verified property contract and read-after-write policy.")]
     public Task<SigmaToolResult<object?>> BlockSetControls(SetControlsInput input, CancellationToken cancellationToken) => _runtime.BlockSetControlsAsync(input, cancellationToken);
 
     [McpServerTool(Name = "sigma_connection_add", UseStructuredContent = true), Description("Create a semantic graph connection using explicit source and target pins.")]

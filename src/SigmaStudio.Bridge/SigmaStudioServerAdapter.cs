@@ -31,6 +31,7 @@ public sealed class SigmaStudioServerAdapter
         "project.undo", "project.redo", "project.export", "graph.link", "graph.compile", "graph.download",
         "graph.refreshLive",
         "catalog.discovery",
+        "property.probeGetControlValue",
         "block.add", "block.remove", "block.rename", "block.getControls", "block.setControl", "block.setControls", "connection.add", "connection.remove"
     ];
 
@@ -62,6 +63,15 @@ public sealed class SigmaStudioServerAdapter
 
     public AutomationSnapshot GetSnapshot()
     {
+        try
+        {
+            EnsureLoaded();
+        }
+        catch
+        {
+            // Snapshot is also the diagnostics path; preserve an unavailable
+            // snapshot instead of turning a missing local DLL into a pipe error.
+        }
         var projectState = new ProjectStateDto(
             _projectPath,
             _projectPath is null ? null : Path.GetFileNameWithoutExtension(_projectPath),
@@ -117,6 +127,8 @@ public sealed class SigmaStudioServerAdapter
                     return ExportLiveGraph();
                 case "block.getControls":
                     return RefreshBlockControls(RequiredString(payload, "block"));
+                case "property.probeGetControlValue":
+                    return ProbeGetControlValue(payload);
                 case "catalog.discovery":
                     return CatalogDiscovery();
                 case "block.remove":
@@ -292,17 +304,29 @@ public sealed class SigmaStudioServerAdapter
 
     private AdapterResult RefreshBlockControls(string blockName)
     {
-        var export = ExportLiveGraph();
-        if (!export.Ok || _liveGraph is null) return export;
+        if (_liveGraph is null || _liveGraph.Freshness != GraphFreshness.Fresh)
+        {
+            var export = ExportLiveGraph();
+            if (!export.Ok || _liveGraph is null) return export;
+        }
         var block = _liveGraph.Blocks.FirstOrDefault(candidate => string.Equals(candidate.Id, blockName, StringComparison.OrdinalIgnoreCase) || string.Equals(candidate.ObjectName, blockName, StringComparison.OrdinalIgnoreCase));
         if (block is null) return AdapterResult.Failure("BLOCK_NOT_FOUND", $"Block '{blockName}' was not found in the live graph.");
 
         var readCount = 0;
         var controls = block.Controls.Select(control =>
         {
-            if (!TryGetControlValue(block.ObjectName, control.Name, out var value)) return control;
+            if (!TryGetControlValue(block.ObjectName, control.Name, out var rawValue)) return control;
             readCount++;
-            return control with { Value = value, Source = "live-sigmastudio-property", Freshness = GraphFreshness.Fresh };
+            var typedValue = JsonSerializer.SerializeToElement(rawValue).Clone();
+            var numericValue = rawValue is not bool && typedValue.TryGetDouble(out var number) ? number : (double?)null;
+            return control with
+            {
+                Value = numericValue,
+                ValueType = ControlValueJson.ValueType(typedValue),
+                TypedValue = numericValue is null ? typedValue : null,
+                Source = "live-sigmastudio-property",
+                Freshness = GraphFreshness.Fresh
+            };
         }).ToArray();
         var warnings = (_liveGraph.Warnings ?? []).ToList();
         if (readCount == 0) warnings.Add($"CONTROL_READBACK_UNAVAILABLE: GET_OBJECT_PROPERTY did not return a value for '{block.ObjectName}'.");
@@ -314,38 +338,59 @@ public sealed class SigmaStudioServerAdapter
         return AdapterResult.Success(new { block = block.ObjectName, readCount, controls });
     }
 
-    private bool TryGetControlValue(string objectName, string controlName, out double? value)
+    private bool TryGetControlValue(string objectName, string controlName, out object? value)
     {
-        value = null;
+        var probe = InvokeGetControlValue(objectName, 0, 0, controlName);
+        value = probe.Values.FirstOrDefault();
+        return probe.Returned && value is not null;
+    }
+
+    private AdapterResult ProbeGetControlValue(JsonElement payload)
+    {
+        var objectName = RequiredString(payload, "objectName");
+        var algorithmIndex = payload.TryGetProperty("algorithmIndex", out var algorithm) && algorithm.TryGetInt32(out var algorithmValue) ? algorithmValue : 0;
+        var repeatIndex = payload.TryGetProperty("repeatIndex", out var repeat) && repeat.TryGetInt32(out var repeatValue) ? repeatValue : 0;
+        var controlName = RequiredString(payload, "controlName");
+        var probe = InvokeGetControlValue(objectName, algorithmIndex, repeatIndex, controlName);
+        return AdapterResult.Success(new
+        {
+            serverMethod = probe.MethodSignature,
+            objectName,
+            opcode = "getControlValue",
+            propertyParameters = new object?[] { algorithmIndex, repeatIndex, controlName },
+            returnBool = probe.ReturnValue,
+            returnedArrayLength = probe.Values.Length,
+            returnedClrTypes = probe.Values.Select(value => value?.GetType().FullName).ToArray(),
+            returnedValues = probe.Values,
+            exception = probe.Exception
+        });
+    }
+
+    private PropertyProbeResult InvokeGetControlValue(string objectName, int algorithmIndex, int repeatIndex, string controlName)
+    {
         var method = _server!.GetType().GetMethods(BindingFlags.Instance | BindingFlags.Public)
             .FirstOrDefault(candidate => string.Equals(candidate.Name, "GET_OBJECT_PROPERTY", StringComparison.OrdinalIgnoreCase) && candidate.GetParameters().Length == 4);
-        if (method is null) return false;
-        var arguments = new object?[] { "getControlValue", objectName, Array.Empty<object>(), new object[] { controlName } };
+        if (method is null) return new PropertyProbeResult(null, null, [], "GET_OBJECT_PROPERTY with the documented four-parameter signature was not found.");
+
+        var arguments = PropertyInvocationBuilder.BuildGetControlValueArguments(objectName, algorithmIndex, repeatIndex, controlName);
         try
         {
             var returned = method.Invoke(_server, arguments);
-            if (returned is bool success && !success) return false;
-            if (arguments[2] is not object[] values || values.Length == 0 || values[0] is null) return false;
-            value = values[0] switch
-            {
-                bool boolean => boolean ? 1 : 0,
-                byte number => number,
-                short number => number,
-                int number => number,
-                long number => number,
-                float number => number,
-                double number => number,
-                decimal number => (double)number,
-                _ when double.TryParse(values[0].ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var parsed) => parsed,
-                _ => null
-            };
-            return value is not null;
+            var values = arguments[2] as object[] ?? [];
+            return new PropertyProbeResult(FormatSignature(method), returned as bool? ?? true, values, null);
         }
-        catch
+        catch (TargetInvocationException ex) when (ex.InnerException is not null)
         {
-            return false;
+            return new PropertyProbeResult(FormatSignature(method), null, [], ex.InnerException.ToString());
+        }
+        catch (Exception ex)
+        {
+            return new PropertyProbeResult(FormatSignature(method), null, [], ex.ToString());
         }
     }
+
+    private static string FormatSignature(MethodInfo method) =>
+        $"{method.Name}({string.Join(", ", method.GetParameters().Select(parameter => $"{parameter.ParameterType.FullName} {parameter.Name}"))}) -> {method.ReturnType.FullName}";
 
     private static string RequiredString(JsonElement payload, string name)
     {
@@ -431,6 +476,10 @@ public sealed class SigmaStudioServerAdapter
     };
 
     private sealed record ConnectionEndpoints(string SourceBlock, int SourcePinIndex, string TargetBlock, int TargetPinIndex);
+    private sealed record PropertyProbeResult(string? MethodSignature, bool? ReturnValue, object[] Values, string? Exception)
+    {
+        public bool Returned => ReturnValue is not false && Exception is null;
+    }
 }
 
 public sealed record AdapterResult(bool Ok, object? Result = null, BridgeError? Error = null)

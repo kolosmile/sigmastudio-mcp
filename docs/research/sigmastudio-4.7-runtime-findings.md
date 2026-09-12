@@ -17,6 +17,17 @@ Observed evidence:
 - The public server signatures were reflected without invoking undocumented writes: `EXPORT_SYSTEM_FILES`, `REMOVE_OBJECT`, `CONNECT_OBJECT`, `DISCONNECT_OBJECT`, `INSERT_BLOCKOBJECT[_POINT]`, `GET_OBJECT_PROPERTY`, and `SET_OBJECT_PROPERTY` are present.
 - A real export produced `*_NetList.xml`, schematic XML, `.params`, generated headers, HEX and transfer-buffer files. The observed NetList contained 30 algorithms and 94 `LinkN` references; the normalized visual graph contained 28 blocks and 53 connections.
 - Two live exports produced identical block and connection IDs. `Mute1`, `Mute2`, and `Mute3` were observed in the export with `Mute=0`.
-- The UI probe found `captureWindow`, `CaptureWndtoolStrip`, and status text `Active: Downloaded` in `StatusBar.Pane2`.
+- The UI probe now selects the actual `SStudio.exe` top-level window by process id; this avoids accidentally selecting an Edge window whose tab title contains “SigmaStudio”. The status probe reads `StatusBar.Pane2` and preserves the raw UI text.
+- The classic 4.7 Capture tree is `captureWindow` → `panel1`/`panel2` → `treeViewAdv1`. `treeViewAdv1` exposes no UIA row children and no supported UIA patterns. The toolbar `CaptureWndtoolStrip` exposes only the observed Clear/Show Columns/Display Sequence Window controls; no Copy/Copy All InvokePattern was found.
+- The verified context-menu probe and focused keyboard `Ctrl+A`/`Ctrl+C` probe produced no Capture clipboard text on this local build. Production therefore returns `CAPTURE_COPY_ACTION_UNAVAILABLE` instead of claiming that a visible owner-drawn grid was read.
+- The local reflection signature is `GET_OBJECT_PROPERTY(string opcode, string objectName, object[]& getPropVal, object[] propertyParams) -> bool`. A read-only probe for `Mute1`, algorithm `0`, repeat `0`, control `Mute` passed `propertyParams=[0,0,"Mute"]`, returned `true`, and produced one `System.Boolean` value (`false`). The previous `["Mute"]` parameter shape was incorrect.
+- The read-only MCP developer tool is `sigma_property_probe_get_control_value`; it returns the reflected signature, object name, opcode, property parameters, return value, CLR types and values.
 
-Still unverified: the exact `SET_OBJECT_PROPERTY`/control opcode contract and property readback arguments. The adapter therefore reports `CONTROL_READBACK_UNAVAILABLE` when the read-only probe returns no value and keeps block control writes disabled rather than guessing an opcode.
+Still unverified: the `SET_OBJECT_PROPERTY` mutation on a disposable project, read-after-write, Capture correlation, and restore. The documented ADI order is implemented in a unit-tested invocation builder, but production control writes remain guarded until the destructive HIL policy is satisfied.
+
+Primary ADI references used for the contract:
+
+- [SigmaStudioServer property interface](https://wiki.analog.com/resources/tools-software/sigmastudio/usingsigmastudio/scripting/server)
+- [Sample `setControlValue` scripts](https://wiki.analog.com/resources/tools-software/sigmastudio/usingsigmastudio/scripting/iscripted_samples)
+- [Capture Window](https://wiki.analog.com/resources/tools-software/sigmastudiov2/developmentenvironment/capturewinow/capture_window)
+- [Capture Output Data](https://wiki.analog.com/resources/tools-software/sigmastudiov2/usingsigmastudio/captureoutputdata)

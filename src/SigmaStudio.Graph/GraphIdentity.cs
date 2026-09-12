@@ -1,6 +1,6 @@
-using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using SigmaStudio.Contracts;
 
 namespace SigmaStudio.Graph;
@@ -14,7 +14,9 @@ public static class GraphIdentity
         {
             builder.Append("B|").Append(block.Id).Append('|').Append(block.ObjectName).Append('|').Append(block.CatalogId).Append('\n');
             foreach (var control in block.Controls.OrderBy(control => control.ControlId ?? control.Name, StringComparer.OrdinalIgnoreCase))
-                builder.Append("C|").Append(control.ControlId ?? control.Name).Append('|').Append(control.Value?.ToString("R", CultureInfo.InvariantCulture) ?? "null").Append('\n');
+                builder.Append("C|").Append(control.ControlId ?? control.Name).Append('|')
+                    .Append(control.Value is null ? control.TypedValue?.GetRawText() ?? "null" : JsonSerializer.Serialize(control.Value))
+                    .Append('\n');
         }
         foreach (var connection in graph.Connections.OrderBy(connection => connection.Id ?? string.Empty, StringComparer.Ordinal))
         {

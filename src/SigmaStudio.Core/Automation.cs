@@ -255,7 +255,7 @@ public sealed class InMemorySigmaStudioAutomation : ISigmaStudioAutomation
     private AutomationResult SetControl(object? parameters) => SetControls(new
     {
         block = GetString(parameters, "block"),
-        changes = new[] { new ControlChangeInput(GetString(parameters, "control"), GetDouble(parameters, "value")) }
+        changes = new[] { new ControlChangeInput(GetString(parameters, "control"), GetJsonElement(parameters, "value")) }
     });
 
     private AutomationResult SetControls(object? parameters)
@@ -269,12 +269,24 @@ public sealed class InMemorySigmaStudioAutomation : ISigmaStudioAutomation
         foreach (var change in changes)
         {
             if (!controls.TryGetValue(change.Control, out var control)) return AutomationResult.Failure("CONTROL_NOT_FOUND", $"Control '{change.Control}' was not found.");
-            if (control.Min is not null && change.Value < control.Min || control.Max is not null && change.Value > control.Max) return AutomationResult.Failure("CONTROL_VALUE_OUT_OF_RANGE", $"Value for '{change.Control}' is outside its documented range.");
+            if (ControlValueJson.TryGetNumber(change.Value, out var number) &&
+                (control.Min is not null && number < control.Min || control.Max is not null && number > control.Max))
+                return AutomationResult.Failure("CONTROL_VALUE_OUT_OF_RANGE", $"Value for '{change.Control}' is outside its documented range.");
+            if (control.Enum is { Count: > 0 } && change.Value.ValueKind == JsonValueKind.String &&
+                !control.Enum.Contains(change.Value.GetString() ?? "", StringComparer.OrdinalIgnoreCase))
+                return AutomationResult.Failure("CONTROL_VALUE_INVALID", $"Value for '{change.Control}' is not one of the documented enum values.");
         }
         foreach (var change in changes)
         {
-            controls[change.Control] = controls[change.Control] with { Value = change.Value };
-            AddCapture("write", "CONTROL", $"{blockName}.{change.Control} = {change.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)}", blockName, change.Control);
+            var control = controls[change.Control];
+            var numeric = ControlValueJson.TryGetNumber(change.Value, out var number) ? number : (double?)null;
+            controls[change.Control] = control with
+            {
+                Value = numeric,
+                ValueType = ControlValueJson.ValueType(change.Value),
+                TypedValue = numeric is null ? change.Value.Clone() : null
+            };
+            AddCapture("write", "CONTROL", $"{blockName}.{change.Control} = {change.Value.GetRawText()}", blockName, change.Control);
         }
         _graph = _graph with { Blocks = _graph.Blocks.Select(b => b == block ? b with { Controls = controls.Values.OrderBy(c => c.Name).ToArray() } : b).ToArray() };
         _runtimeRevision++;
@@ -354,6 +366,6 @@ public sealed class InMemorySigmaStudioAutomation : ISigmaStudioAutomation
 
     private static T Deserialize<T>(object? value) => JsonSerializer.Deserialize<T>(JsonSerializer.Serialize(value, JsonOptions), JsonOptions) ?? throw new InvalidOperationException("Invalid command parameters.");
     private static string GetString(object? value, string property) => Deserialize<JsonElement>(value).GetProperty(property).GetString() ?? "";
-    private static double GetDouble(object? value, string property) => Deserialize<JsonElement>(value).GetProperty(property).GetDouble();
+    private static JsonElement GetJsonElement(object? value, string property) => Deserialize<JsonElement>(value).GetProperty(property).Clone();
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web) { WriteIndented = true };
 }

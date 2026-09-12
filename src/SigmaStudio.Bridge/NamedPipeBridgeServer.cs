@@ -83,7 +83,11 @@ public sealed class NamedPipeBridgeServer
                     "bridge.get_version" => Success(request.Id, new { version = "0.1.0", targetFramework = ".NET 8 Windows" }),
                     "bridge.get_capabilities" => Success(request.Id, new BridgeCapabilities("0.1.0", _adapter.BackendName, _adapter.IsLoaded, _observer.IsAvailable, _adapter.Methods)),
                     "bridge.probe" => Success(request.Id, _adapter.Probe()),
-                    "bridge.get_snapshot" => Success(request.Id, _adapter.GetSnapshot() with { Capture = _observer.ReadCaptureEntries() }),
+                    "bridge.get_snapshot" => Success(request.Id, MergeUiState(_adapter.GetSnapshot() with
+                    {
+                        Capture = _observer.ReadCaptureEntries(),
+                        CaptureWarning = _observer.CaptureWarning
+                    }, _observer.ReadStatusObservation())),
                     "bridge.ui_status" => Success(request.Id, _observer.ReadStatus()),
                     "bridge.capture_get" => Success(request.Id, _observer.ReadCapture()),
                     _ => DispatchAdapter(request)
@@ -100,6 +104,24 @@ public sealed class NamedPipeBridgeServer
     {
         var result = _adapter.Execute(request.Method, request.Params);
         return result.Ok ? Success(request.Id, result.Result) : new BridgeResponse(request.Id, false, null, result.Error);
+    }
+
+    private static AutomationSnapshot MergeUiState(AutomationSnapshot snapshot, UiStateObservationDto observed)
+    {
+        var commandState = snapshot.State.SigmaStudioState.ToString();
+        var normalizedState = observed.Available ? observed.NormalizedState : null;
+        var ready = normalizedState == SigmaStudioState.ActiveDownloaded &&
+                    snapshot.State.DeployedDesignRevision is not null &&
+                    snapshot.State.DeployedDesignRevision == snapshot.State.DesignRevision;
+        var state = snapshot.State with
+        {
+            SigmaStudioState = normalizedState ?? SigmaStudioState.Unknown,
+            ReadyForMeasurement = ready,
+            CommandState = commandState,
+            ObservedUiState = observed.RawText,
+            NormalizedState = normalizedState
+        };
+        return snapshot with { State = state };
     }
 
     private NamedPipeServerStream CreateServer()

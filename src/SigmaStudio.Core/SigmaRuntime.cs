@@ -40,6 +40,11 @@ public sealed class SigmaRuntime
         return await ExecuteReadOnlyAsync("sigma_catalog_discovery", "catalog.discovery", ct);
     }
 
+    public async Task<SigmaToolResult<object?>> PropertyProbeGetControlValueAsync(PropertyProbeGetControlValueInput input, CancellationToken ct)
+    {
+        return await ExecuteReadOnlyAsync("sigma_property_probe_get_control_value", "property.probeGetControlValue", input, ct);
+    }
+
     public Task<SigmaToolResult<object?>> StatusAsync(CancellationToken ct) => ReadAsync("sigma_status", ct, snapshot => snapshot.State);
 
     public async Task<SigmaToolResult<object?>> ReadyForMeasurementAsync(CancellationToken ct)
@@ -257,9 +262,13 @@ public sealed class SigmaRuntime
 
     public async Task<SigmaToolResult<object?>> CaptureGetAsync(CaptureGetInput input, CancellationToken ct)
     {
-        return await ReadAsync("sigma_capture_get", ct, snapshot => snapshot.Capture
-            .Where(e => input.AfterSequence is null || e.Sequence > input.AfterSequence.Value)
-            .Take(Math.Clamp(input.Limit, 1, 1000)).ToArray());
+        return await ReadAsync("sigma_capture_get", ct, snapshot => new
+        {
+            entries = snapshot.Capture
+                .Where(e => input.AfterSequence is null || e.Sequence > input.AfterSequence.Value)
+                .Take(Math.Clamp(input.Limit, 1, 1000)).ToArray(),
+            warning = snapshot.CaptureWarning
+        });
     }
 
     public async Task<SigmaToolResult<object?>> CaptureCursorAsync(CancellationToken ct)
@@ -322,12 +331,15 @@ public sealed class SigmaRuntime
         }
     }
 
-    private async Task<SigmaToolResult<object?>> ExecuteReadOnlyAsync(string operation, string command, CancellationToken ct)
+    private Task<SigmaToolResult<object?>> ExecuteReadOnlyAsync(string operation, string command, CancellationToken ct) =>
+        ExecuteReadOnlyAsync(operation, command, null, ct);
+
+    private async Task<SigmaToolResult<object?>> ExecuteReadOnlyAsync(string operation, string command, object? parameters, CancellationToken ct)
     {
         if (!await _operationLock.WaitAsync(TimeSpan.FromSeconds(3), ct)) return Failure(operation, "BUSY", "Another SigmaStudio operation is in progress.");
         try
         {
-            var result = await _automation.ExecuteAsync(new AutomationCommand(command), ct);
+            var result = await _automation.ExecuteAsync(new AutomationCommand(command, parameters), ct);
             var snapshot = await _automation.GetSnapshotAsync(ct);
             return result.Ok
                 ? Success(operation, snapshot, result.Data)
@@ -422,8 +434,8 @@ public sealed class SigmaRuntime
                 var block = ResolveBlock(graph, GetRequiredString(operation, "blockId"));
                 var control = block?.Controls.FirstOrDefault(candidate => string.Equals(candidate.ControlId, GetOptionalString(operation, "controlId"), StringComparison.OrdinalIgnoreCase) || string.Equals(candidate.Name, GetOptionalString(operation, "control"), StringComparison.OrdinalIgnoreCase));
                 if (block is null || control is null) return TransactionTranslation.Failure("CONTROL_NOT_FOUND", "Transaction control was not found.");
-                if (!operation.TryGetProperty("value", out var value) || !value.TryGetDouble(out var doubleValue)) return TransactionTranslation.Failure("INVALID_PARAMETERS", "Transaction control value must be numeric.");
-                return TransactionTranslation.Success(new AutomationCommand("block.setControl", new { block = block.ObjectName, control = control.Name, value = doubleValue }), false);
+                if (!operation.TryGetProperty("value", out var value)) return TransactionTranslation.Failure("INVALID_PARAMETERS", "Transaction control value is required.");
+                return TransactionTranslation.Success(new AutomationCommand("block.setControl", new { block = block.ObjectName, control = control.Name, value = value.Clone() }), false);
             }
             default:
                 return TransactionTranslation.Failure("TRANSACTION_OPERATION_UNSUPPORTED", $"Unsupported transaction operation '{type}'.");

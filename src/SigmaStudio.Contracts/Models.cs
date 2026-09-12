@@ -1,7 +1,9 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace SigmaStudio.Contracts;
 
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum SigmaStudioState
 {
     NoApplication,
@@ -42,7 +44,8 @@ public sealed record ControlDto(
     string? ValueType = null,
     string? UpdateMode = null,
     string? Source = null,
-    GraphFreshness? Freshness = null);
+    GraphFreshness? Freshness = null,
+    JsonElement? TypedValue = null);
 
 public sealed record ParameterDto(string Name, string? Address, string? Format, double? Value);
 
@@ -90,14 +93,18 @@ public sealed record ProjectStateDto(
     long RuntimeRevision,
     long? DeployedDesignRevision,
     SigmaStudioState SigmaStudioState,
-    bool ReadyForMeasurement);
+    bool ReadyForMeasurement,
+    string? CommandState = null,
+    string? ObservedUiState = null,
+    SigmaStudioState? NormalizedState = null);
 
 public sealed record AutomationSnapshot(
     ProjectStateDto State,
     ProjectGraphDto Graph,
     IReadOnlyList<CaptureEntryDto> Capture,
     string Backend,
-    bool Connected);
+    bool Connected,
+    string? CaptureWarning = null);
 
 public sealed record CaptureEntryDto(
     long Sequence,
@@ -110,6 +117,13 @@ public sealed record CaptureEntryDto(
     JsonElement? Payload = null);
 
 public sealed record CaptureCursorDto(long NextSequence);
+
+public sealed record UiStateObservationDto(
+    bool Available,
+    string? Window,
+    string? RawText,
+    string? StatusControl,
+    SigmaStudioState? NormalizedState);
 
 public sealed record CatalogSourceDto(
     string Publisher,
@@ -154,7 +168,23 @@ public sealed record SigmaToolResult<T>(
 
 public sealed record MutationInput(long ExpectedDesignRevision, string MutationId);
 
-public sealed record ControlChangeInput(string Control, double Value);
+public sealed record ControlChangeInput
+{
+    public string Control { get; init; }
+    public JsonElement Value { get; init; }
+
+    [JsonConstructor]
+    public ControlChangeInput(string control, JsonElement value)
+    {
+        Control = control;
+        Value = value.Clone();
+    }
+
+    public ControlChangeInput(string control, double value)
+        : this(control, ControlValueJson.Number(value))
+    {
+    }
+}
 
 public sealed record ProjectOpenInput(string Path);
 
@@ -198,7 +228,27 @@ public sealed record BlockRemoveInput(string Block, MutationInput Mutation);
 
 public sealed record BlockRenameInput(string Block, string NewName, MutationInput Mutation);
 
-public sealed record SetControlInput(string Block, string Control, double Value, MutationInput Mutation);
+public sealed record SetControlInput
+{
+    public string Block { get; init; }
+    public string Control { get; init; }
+    public JsonElement Value { get; init; }
+    public MutationInput Mutation { get; init; }
+
+    [JsonConstructor]
+    public SetControlInput(string block, string control, JsonElement value, MutationInput mutation)
+    {
+        Block = block;
+        Control = control;
+        Value = value.Clone();
+        Mutation = mutation;
+    }
+
+    public SetControlInput(string block, string control, double value, MutationInput mutation)
+        : this(block, control, ControlValueJson.Number(value), mutation)
+    {
+    }
+}
 
 public sealed record SetControlsInput(string Block, IReadOnlyList<ControlChangeInput> Changes, MutationInput Mutation);
 
@@ -214,6 +264,12 @@ public sealed record ConnectionInput(
 public sealed record ConnectionRemoveInput(ConnectionDto Connection, MutationInput Mutation);
 
 public sealed record CaptureGetInput(long? AfterSequence = null, int Limit = 100);
+
+public sealed record PropertyProbeGetControlValueInput(
+    string ObjectName,
+    string ControlName,
+    int AlgorithmIndex = 0,
+    int RepeatIndex = 0);
 
 public sealed record RawAccessOptions(bool EnableRawParameterAccess = false, bool EnableRawRegisterAccess = false);
 
@@ -257,3 +313,36 @@ public sealed record CatalogDiscoveryDto(
     string Source,
     IReadOnlyList<string> VerifiedAutomationMethods,
     IReadOnlyList<string> Warnings);
+
+public static class ControlValueJson
+{
+    public static JsonElement Number(double value) =>
+        JsonDocument.Parse(value.ToString("R", System.Globalization.CultureInfo.InvariantCulture)).RootElement.Clone();
+
+    public static bool TryGetNumber(JsonElement value, out double number)
+    {
+        if (value.ValueKind == JsonValueKind.Number && value.TryGetDouble(out number)) return true;
+        if (value.ValueKind == JsonValueKind.True)
+        {
+            number = 1;
+            return true;
+        }
+        if (value.ValueKind == JsonValueKind.False)
+        {
+            number = 0;
+            return true;
+        }
+        number = default;
+        return false;
+    }
+
+    public static string ValueType(JsonElement value) => value.ValueKind switch
+    {
+        JsonValueKind.Number => "number",
+        JsonValueKind.True or JsonValueKind.False => "boolean",
+        JsonValueKind.String => "string",
+        JsonValueKind.Array => "array",
+        JsonValueKind.Object => "object",
+        _ => "null"
+    };
+}
