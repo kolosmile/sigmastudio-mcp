@@ -20,4 +20,9 @@ design. The test block and control are selected with:
     $env:SIGMASTUDIO_MCP_HIL_CONTROL = "Gain"
     $env:SIGMASTUDIO_MCP_HIL_NEW_VALUE = "0.25"
 
+For structural connection HIL, additionally select one existing edge:
+
+    $env:SIGMASTUDIO_MCP_HIL_SOURCE = "Gain1"
+    $env:SIGMASTUDIO_MCP_HIL_TARGET = "Output1"
+
 The `.dspproj` itself is not generated or edited by this repository.

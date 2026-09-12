@@ -6,5 +6,6 @@
     <PackageReference Include="xunit.runner.visualstudio" />
     <PackageReference Include="coverlet.collector" />
     <ProjectReference Include="..\..\src\SigmaStudio.Core\SigmaStudio.Core.csproj" />
+    <ProjectReference Include="..\..\src\SigmaStudio.Catalog\SigmaStudio.Catalog.csproj" />
   </ItemGroup>
 </Project>
