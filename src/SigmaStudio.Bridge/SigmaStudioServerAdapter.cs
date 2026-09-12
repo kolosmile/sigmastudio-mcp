@@ -142,11 +142,11 @@ public sealed class SigmaStudioServerAdapter
                 case "connection.add":
                     var add = RequiredConnection(payload);
                     return Invoke(method, "CONNECT_OBJECT",
-                        add.SourceBlock, add.SourcePinIndex, add.TargetBlock, add.TargetPinIndex);
+                        add.SourceBlock, ToServerPinIndex(add.SourcePinIndex), add.TargetBlock, ToServerPinIndex(add.TargetPinIndex));
                 case "connection.remove":
                     var remove = RequiredConnection(payload);
                     return Invoke(method, "DISCONNECT_OBJECT",
-                        remove.SourceBlock, remove.SourcePinIndex, remove.TargetBlock, remove.TargetPinIndex);
+                        remove.SourceBlock, ToServerPinIndex(remove.SourcePinIndex), remove.TargetBlock, ToServerPinIndex(remove.TargetPinIndex));
                 case "project.checkpoint":
                     return CreateCheckpoint();
                 case "block.add":
@@ -584,6 +584,19 @@ public sealed class SigmaStudioServerAdapter
             ? RequiredInt(target, "pinIndex")
             : RequiredInt(payload, "targetPinIndex");
         return new ConnectionEndpoints(sourceBlock, sourcePinIndex, targetBlock, targetPinIndex);
+    }
+
+    // EXPORT_SYSTEM_FILES exposes NetList P<n> pin labels as one-based graph
+    // indices, while the documented CONNECT_OBJECT/DISCONNECT_OBJECT server
+    // contract uses zero-based pin arguments. This conversion is based on the
+    // verified disposable Input -> Output fixture and is deliberately kept at
+    // the SigmaStudio adapter boundary; the public graph contract remains the
+    // exported graph index.
+    private static int ToServerPinIndex(int graphPinIndex)
+    {
+        if (graphPinIndex < 1)
+            throw new ArgumentException($"Graph pin index {graphPinIndex} is not a valid exported SigmaStudio P<n> index.");
+        return graphPinIndex - 1;
     }
 
     private void EnsureLoaded()

@@ -46,7 +46,7 @@ $env:SIGMASTUDIO_MCP_HIL_NEW_VALUE = "0.25"
 dotnet test tests/SigmaStudio.IntegrationTests/SigmaStudio.IntegrationTests.csproj -c Release --filter "FullyQualifiedName~MutationHilTests.Disposable_control_write_is_read_back_captured_and_restored"
 ```
 
-Structural connection tests require a dedicated small disposable Input → Gain → Output project. The currently supplied large two-IC design is suitable for graph/control observation, but it is not accepted as structural proof because its server pin indices do not map directly from exported `P<n>` numbers and removing some internal edges makes `EXPORT_SYSTEM_FILES` fail.
+The adapter converts exported graph pin indices (`P1`, `P2`, ...) to the documented zero-based `CONNECT_OBJECT`/`DISCONNECT_OBJECT` server arguments. This mapping was verified on a disposable ADAU1701 stereo Input → Output fixture. Structural acceptance still requires a valid intermediate graph: on ADAU1701, disconnecting a mandatory output edge makes `COMPILE`/`EXPORT_SYSTEM_FILES` fail, so that case is not reported as a successful live structural mutation. The large two-IC design remains suitable for graph/control observation, but is not accepted as structural proof.
 
 Structural tests are separately gated with `SIGMASTUDIO_MCP_HIL_STRUCTURAL=1`, so the control-write HIL command above cannot accidentally mutate a production-sized project.
 
